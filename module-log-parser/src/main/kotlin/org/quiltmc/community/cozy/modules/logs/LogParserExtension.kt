@@ -129,28 +129,29 @@ public class LogParserExtension : Extension() {
 					it.minecraftVersion != null ||
 					it.getMods().isNotEmpty()
 			}
-
-		if (logs.isNotEmpty()) {			message.respond(pingInReply = false) {
+		if (logs.isNotEmpty()) {
+			message.respond(pingInReply = false) {
 				addLogs(logs)
 
 				// Add button for mclo.gs upload
 				components {
 					publicButton {
 						label = "Upload to mclo.gs".toKey()
-								action {
+						
+						action {
 							if (logs.size == 1) {
 								val log = logs.first()
 								val uploadUrl = mclogsUploadService.uploadLog(log)
 								
-								respondEphemeral {
-									if (uploadUrl != null) {
-										content = "✅ Log successfully uploaded to mclo.gs: $uploadUrl"
+								respond {
+									content = if (uploadUrl != null) {
+										"✅ Log successfully uploaded to mclo.gs: $uploadUrl"
 									} else {
-										content = "❌ Failed to upload log to mclo.gs. Please try again later."
+										"❌ Failed to upload log to mclo.gs. Please try again later."
 									}
 								}
 							} else {
-								respondEphemeral {
+								respond {
 									content = "📋 Found ${logs.size} logs. Uploading all to mclo.gs..."
 								}
 								
@@ -164,7 +165,7 @@ public class LogParserExtension : Extension() {
 									}
 								}
 								
-								editOriginalInteractionResponse {
+								edit {
 									content = if (uploadResults.any { it.contains("http") }) {
 										"✅ **Upload Results:**\n" + uploadResults.joinToString("\n")
 									} else {
