@@ -137,13 +137,12 @@ public class LogParserExtension : Extension() {
 				components {
 					publicButton {
 						label = "Upload to mclo.gs".toKey()
-						
-						action {
+								action {
 							if (logs.size == 1) {
 								val log = logs.first()
 								val uploadUrl = mclogsUploadService.uploadLog(log)
 								
-								respond {
+								respondEphemeral {
 									if (uploadUrl != null) {
 										content = "✅ Log successfully uploaded to mclo.gs: $uploadUrl"
 									} else {
@@ -151,7 +150,7 @@ public class LogParserExtension : Extension() {
 									}
 								}
 							} else {
-								respond {
+								respondEphemeral {
 									content = "📋 Found ${logs.size} logs. Uploading all to mclo.gs..."
 								}
 								
@@ -165,7 +164,7 @@ public class LogParserExtension : Extension() {
 									}
 								}
 								
-								edit {
+								editOriginalInteractionResponse {
 									content = if (uploadResults.any { it.contains("http") }) {
 										"✅ **Upload Results:**\n" + uploadResults.joinToString("\n")
 									} else {
