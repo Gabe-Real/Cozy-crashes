@@ -255,18 +255,8 @@ public class LogParserExtension : Extension() {
 			}
 		}
 
-		// Handle remaining chunks - send them as follow-up messages
-		for (chunkIndex in 1 until embedChunks.size) {
-			val followUpChunk = embedChunks[chunkIndex]
-			// Send each chunk as a follow-up message
-			this@LogParserExtension.kord.rest.channel.createMessage(this@LogParserExtension.channelId) {
-				followUpChunk.forEach { embedBuilder ->
-					embed(embedBuilder)
-				}
-			}
-		}
-
-		// Add a warning if there are extra embeds beyond the first 10
+		// Handle remaining chunks - these would need to be sent as follow-up messages
+		// For now, we'll limit to first 10 embeds and show warning if more exist
 		if (allEmbeds.size > 10) {
 			val extraEmbeds = allEmbeds.size - 10
 
