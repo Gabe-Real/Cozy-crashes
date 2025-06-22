@@ -208,7 +208,6 @@ public class LogParserExtension : Extension() {
 			}
 		}
 	}
-
 	@Suppress("MagicNumber")
 	private suspend fun MessageCreateBuilder.addLogs(logs: List<Log>) {
 		if (logs.size > 10) {
@@ -217,210 +216,44 @@ public class LogParserExtension : Extension() {
 				"limit the number of logs you post at once."
 		}
 
+		// Build all embeds first
+		val allEmbeds = mutableListOf<dev.kord.rest.builder.message.EmbedBuilder.() -> Unit>()
+		var totalCharacterCount = 0
+
 		logs.forEach { log ->
-			embed {
-				title = if (log.content.startsWith("---- Crashed! ----")) {
-					"Crash Log"
-				} else {
-					"Log File"
-				}
-
-				color = if (log.aborted) {
-					title += ": Aborted"
-
-					DISCORD_RED
-				} else if (log.hasProblems) {
-					title += ": Problems Found"
-
-					DISCORD_YELLOW
-				} else {
-					DISCORD_GREEN
-				}
-
-				val header = buildString {
-					with(log.environment) {
-						val mcVersion = log.minecraftVersion?.string ?: "Unknown"
-
-						appendLine("**__Environment Info__**")
-						appendLine()
-						appendLine("**Minecraft Version:** `$mcVersion`")
-
-						var addAnotherLine = false
-
-						if (javaVersion != null) {
-							appendLine("**Java Version:** `$javaVersion`")
-
-							addAnotherLine = true
-						}
-
-						if (jvmVersion != null) {
-							appendLine("**JVM Version:** `$jvmVersion`")
-
-							addAnotherLine = true
-						}
-
-						if (addAnotherLine) {
-							addAnotherLine = false
-
-							appendLine()
-						}
-
-						if (jvmArgs != null) {
-							appendLine("**Java Args:** `$jvmArgs`")
-
-							addAnotherLine = true
-						}
-
-						if (addAnotherLine) {
-							addAnotherLine = false
-
-							appendLine()
-						}
-
-						if (os != null) {
-							appendLine("**OS:** $os")
-
-							addAnotherLine = true
-						}
-
-						if (cpu != null) {
-							appendLine("**CPU:** `$cpu`")
-
-							addAnotherLine = true
-						}
-
-						if (gpu != null) {
-							appendLine("**GPU:** `$gpu`")
-
-							addAnotherLine = true
-						}
-
-						if (systemMemory != null) {
-							appendLine("**System Memory:** `$systemMemory`")
-
-							addAnotherLine = true
-						}
-
-						if (addAnotherLine) {
-							addAnotherLine = false
-
-							appendLine()
-						}
-
-						if (gameMemory != null) {
-							appendLine("**Game Memory:** `$gameMemory`")
-
-							addAnotherLine = true
-						}
-
-						if (shaderpack != null) {
-							appendLine("**Shaderpack:** `$shaderpack`")
-
-							addAnotherLine = true
-						}
-
-						if (addAnotherLine) {
-							appendLine()
-						}
-					}
-
-					with(log.launcher) {
-						if (this != null) {
-							appendLine("**Launcher:** $name (`${version ?: "Unknown Version"}`)")
-							appendLine()
-						}
-					}
-
-					if (log.getLoaders().isNotEmpty()) {
-						val pluginPlatforms = setOf(
-							LoaderType.Paper,
-							LoaderType.Spigot,
-							LoaderType.Bukkit,
-							LoaderType.Velocity,
-							LoaderType.Bungeecord,
-							LoaderType.Waterfall
-						)
-
-						val isPluginPlatform = pluginPlatforms.any { log.getLoaderVersion(it) != null }
-
-						log.getLoaders()
-							.toList()
-							.sortedBy { it.first.name }
-							.forEach { (loader, version) ->
-								if (isPluginPlatform) {
-									// For plugin platforms, show loader name and version separately
-									appendLine("**Platform:** ${loader.name.capitalizeWords()}")
-									appendLine("**Version:** `${version.string}`")
-								} else {
-									// For mod loaders, keep the original format
-									appendLine("**Loader:** ${loader.name.capitalizeWords()} (`${version.string}`)")
-								}
-							}
-					}
-
-					// Determine if we should say "Plugins" or "Mods"
-					val pluginPlatforms = setOf(
-						LoaderType.Paper,
-						LoaderType.Spigot,
-						LoaderType.Bukkit,
-						LoaderType.Velocity,
-						LoaderType.Bungeecord,
-						LoaderType.Waterfall
-					)
-					val isPluginPlatform = pluginPlatforms.any { log.getLoaderVersion(it) != null }
-					val itemType = if (isPluginPlatform) "Plugins" else "Mods"
-
-					appendLine(
-						"**$itemType:** " + if (log.getMods().isNotEmpty()) {
-							log.getMods().size
-						} else {
-							"None"
-						}
-					)
-
-					appendLine()
-				}.trim()
-
-				if (log.aborted || log.getMessages().isNotEmpty()) {
-					val messages = buildString {
-						appendLine("__**Messages**__")
-						appendLine()
-
-						if (log.aborted) {
-							appendLine("__**Log parsing aborted**__")
-							appendLine(log.abortReason)
-						} else {
-							log.getMessages().forEach {
-								appendLine(it)
-								appendLine()
-							}
-						}
-					}.trim()
-
-					description = "$header\n\n$messages"
-				} else {
-					description = header
-				}
-
-				if (description!!.length > 4000) {
-					description = description!!.take(3994) + "\n[...]"
-				}
+			val logEmbeds = createEmbedsForLog(log)
+			
+			// Check if adding these embeds would exceed character limit
+			val logCharacterCount = logEmbeds.sumOf { embed ->
+				// Rough character count estimation
+				val testBuilder = dev.kord.rest.builder.message.EmbedBuilder()
+				embed(testBuilder)
+				(testBuilder.title?.length ?: 0) + (testBuilder.description?.length ?: 0)
 			}
 
-			log.extraEmbeds.forEach {
-				embed { it(this) }
+			if (totalCharacterCount + logCharacterCount > 6000 && allEmbeds.isNotEmpty()) {
+				// Would exceed limit, so we'll need to split into multiple messages
+				break
+			}
+
+			allEmbeds.addAll(logEmbeds)
+			totalCharacterCount += logCharacterCount
+		}
+
+		// Add embeds in chunks of 10 (Discord's limit per message)
+		val embedChunks = allEmbeds.chunked(10)
+		
+		if (embedChunks.isNotEmpty()) {
+			// Add first chunk to current message
+			embedChunks[0].forEach { embedBuilder ->
+				embed(embedBuilder)
 			}
 		}
 
-		if (embeds == null) embeds = mutableListOf()
-		val embeds = embeds!!
-
-		if (embeds.size > 10) {
-			val extraEmbeds = embeds.size - 10
-			val allEmbeds = embeds.take(10)
-
-			embeds.clear()
-			embeds.addAll(allEmbeds)
+		// Handle remaining chunks - these would need to be sent as follow-up messages
+		// For now, we'll limit to first 10 embeds and show warning if more exist
+		if (allEmbeds.size > 10) {
+			val extraEmbeds = allEmbeds.size - 10
 
 			if (content == null) {
 				content = ""
@@ -432,6 +265,266 @@ public class LogParserExtension : Extension() {
 				"issues that have been detailed here, and try again with new logs. Alternatively, if you submitted " +
 				"more than one log in the same message, you could try submitting them one at a time."
 		}
+	}
+
+	private fun createEmbedsForLog(log: Log): List<dev.kord.rest.builder.message.EmbedBuilder.() -> Unit> {
+		val embeds = mutableListOf<dev.kord.rest.builder.message.EmbedBuilder.() -> Unit>()
+
+		val baseTitle = if (log.content.startsWith("---- Crashed! ----")) {
+			"Crash Log"
+		} else {
+			"Log File"
+		}
+
+		val color = if (log.aborted) {
+			DISCORD_RED
+		} else if (log.hasProblems) {
+			DISCORD_YELLOW
+		} else {
+			DISCORD_GREEN
+		}
+
+		val titleSuffix = if (log.aborted) {
+			": Aborted"
+		} else if (log.hasProblems) {
+			": Problems Found"
+		} else {
+			""
+		}
+
+		val header = buildString {
+			with(log.environment) {
+				val mcVersion = log.minecraftVersion?.string ?: "Unknown"
+
+				appendLine("**__Environment Info__**")
+				appendLine()
+				appendLine("**Minecraft Version:** `$mcVersion`")
+
+				var addAnotherLine = false
+
+				if (javaVersion != null) {
+					appendLine("**Java Version:** `$javaVersion`")
+					addAnotherLine = true
+				}
+
+				if (jvmVersion != null) {
+					appendLine("**JVM Version:** `$jvmVersion`")
+					addAnotherLine = true
+				}
+
+				if (addAnotherLine) {
+					addAnotherLine = false
+					appendLine()
+				}
+
+				if (jvmArgs != null) {
+					appendLine("**Java Args:** `$jvmArgs`")
+					addAnotherLine = true
+				}
+
+				if (addAnotherLine) {
+					addAnotherLine = false
+					appendLine()
+				}
+
+				if (os != null) {
+					appendLine("**OS:** $os")
+					addAnotherLine = true
+				}
+
+				if (cpu != null) {
+					appendLine("**CPU:** `$cpu`")
+					addAnotherLine = true
+				}
+
+				if (gpu != null) {
+					appendLine("**GPU:** `$gpu`")
+					addAnotherLine = true
+				}
+
+				if (systemMemory != null) {
+					appendLine("**System Memory:** `$systemMemory`")
+					addAnotherLine = true
+				}
+
+				if (addAnotherLine) {
+					addAnotherLine = false
+					appendLine()
+				}
+
+				if (gameMemory != null) {
+					appendLine("**Game Memory:** `$gameMemory`")
+					addAnotherLine = true
+				}
+
+				if (shaderpack != null) {
+					appendLine("**Shaderpack:** `$shaderpack`")
+					addAnotherLine = true
+				}
+
+				if (addAnotherLine) {
+					appendLine()
+				}
+			}
+
+			with(log.launcher) {
+				if (this != null) {
+					appendLine("**Launcher:** $name (`${version ?: "Unknown Version"}`)")
+					appendLine()
+				}
+			}
+
+			if (log.getLoaders().isNotEmpty()) {
+				val pluginPlatforms = setOf(
+					LoaderType.Paper,
+					LoaderType.Spigot,
+					LoaderType.Bukkit,
+					LoaderType.Velocity,
+					LoaderType.Bungeecord,
+					LoaderType.Waterfall
+				)
+
+				val isPluginPlatform = pluginPlatforms.any { log.getLoaderVersion(it) != null }
+
+				log.getLoaders()
+					.toList()
+					.sortedBy { it.first.name }
+					.forEach { (loader, version) ->
+						if (isPluginPlatform) {
+							appendLine("**Platform:** ${loader.name.capitalizeWords()}")
+							appendLine("**Version:** `${version.string}`")
+						} else {
+							appendLine("**Loader:** ${loader.name.capitalizeWords()} (`${version.string}`)")
+						}
+					}
+			}
+
+			val pluginPlatforms = setOf(
+				LoaderType.Paper,
+				LoaderType.Spigot,
+				LoaderType.Bukkit,
+				LoaderType.Velocity,
+				LoaderType.Bungeecord,
+				LoaderType.Waterfall
+			)
+			val isPluginPlatform = pluginPlatforms.any { log.getLoaderVersion(it) != null }
+			val itemType = if (isPluginPlatform) "Plugins" else "Mods"
+
+			appendLine(
+				"**$itemType:** " + if (log.getMods().isNotEmpty()) {
+					log.getMods().size
+				} else {
+					"None"
+				}
+			)
+
+			appendLine()
+		}.trim()
+
+		val messages = if (log.aborted || log.getMessages().isNotEmpty()) {
+			buildString {
+				appendLine("__**Messages**__")
+				appendLine()
+
+				if (log.aborted) {
+					appendLine("__**Log parsing aborted**__")
+					appendLine(log.abortReason)
+				} else {
+					log.getMessages().forEach {
+						appendLine(it)
+						appendLine()
+					}
+				}
+			}.trim()
+		} else {
+			""
+		}
+
+		// Combine header and messages
+		val fullContent = if (messages.isNotEmpty()) {
+			"$header\n\n$messages"
+		} else {
+			header
+		}
+
+		// Split content if it exceeds 2048 characters (embed description limit)
+		val contentChunks = if (fullContent.length > 2048) {
+			splitContentIntoChunks(fullContent, 2048)
+		} else {
+			listOf(fullContent)
+		}
+
+		// Create embeds for each chunk
+		contentChunks.forEachIndexed { index, chunk ->
+			val embedBuilder: dev.kord.rest.builder.message.EmbedBuilder.() -> Unit = {
+				title = if (contentChunks.size > 1) {
+					"$baseTitle$titleSuffix (${index + 1}/${contentChunks.size})"
+				} else {
+					"$baseTitle$titleSuffix"
+				}
+				
+				// Ensure title doesn't exceed 256 characters
+				if (title!!.length > 256) {
+					title = title!!.take(253) + "..."
+				}
+				
+				this.color = color
+				description = chunk
+			}
+			embeds.add(embedBuilder)
+		}
+
+		// Add extra embeds from the log
+		log.extraEmbeds.forEach { extraEmbed ->
+			embeds.add(extraEmbed)
+		}
+
+		return embeds
+	}
+
+	private fun splitContentIntoChunks(content: String, maxChunkSize: Int): List<String> {
+		if (content.length <= maxChunkSize) {
+			return listOf(content)
+		}
+
+		val chunks = mutableListOf<String>()
+		val lines = content.split("\n")
+		var currentChunk = StringBuilder()
+
+		for (line in lines) {
+			// If adding this line would exceed the limit
+			if (currentChunk.length + line.length + 1 > maxChunkSize) {
+				// If current chunk is not empty, save it
+				if (currentChunk.isNotEmpty()) {
+					chunks.add(currentChunk.toString().trim())
+					currentChunk = StringBuilder()
+				}
+
+				// If single line is too long, split it
+				if (line.length > maxChunkSize) {
+					var remainingLine = line
+					while (remainingLine.length > maxChunkSize) {
+						val splitPoint = maxChunkSize - 10 // Leave room for "..."
+						chunks.add(remainingLine.take(splitPoint) + "...")
+						remainingLine = "..." + remainingLine.drop(splitPoint)
+					}
+					if (remainingLine.isNotEmpty()) {
+						currentChunk.append(remainingLine).append("\n")
+					}
+				} else {
+					currentChunk.append(line).append("\n")
+				}
+			} else {
+				currentChunk.append(line).append("\n")
+			}
+		}
+
+		// Add the last chunk if it's not empty
+		if (currentChunk.isNotEmpty()) {
+			chunks.add(currentChunk.toString().trim())
+		}
+
+		return chunks
 	}
 
 	@Suppress("TooGenericExceptionCaught")
