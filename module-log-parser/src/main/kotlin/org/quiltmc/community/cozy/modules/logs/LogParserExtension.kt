@@ -215,12 +215,11 @@ public class LogParserExtension : Extension() {
 				"a time. You'll only see results for the first 10 logs below - please " +
 				"limit the number of logs you post at once."
 		}
-
 		// Build all embeds first
 		val allEmbeds = mutableListOf<dev.kord.rest.builder.message.EmbedBuilder.() -> Unit>()
 		var totalCharacterCount = 0
 
-		logs.forEach { log ->
+		for (log in logs) {
 			val logEmbeds = createEmbedsForLog(log)
 			
 			// Check if adding these embeds would exceed character limit
@@ -239,7 +238,6 @@ public class LogParserExtension : Extension() {
 			allEmbeds.addAll(logEmbeds)
 			totalCharacterCount += logCharacterCount
 		}
-
 		// Add embeds in chunks of 10 (Discord's limit per message)
 		val embedChunks = allEmbeds.chunked(10)
 		
@@ -247,6 +245,13 @@ public class LogParserExtension : Extension() {
 			// Add first chunk to current message
 			embedChunks[0].forEach { embedBuilder ->
 				embed(embedBuilder)
+			}
+		}
+
+		// Add extraEmbeds from logs separately (they are suspend functions)
+		for (log in logs) {
+			log.extraEmbeds.forEach { extraEmbed ->
+				embed { extraEmbed(this) }
 			}
 		}
 
@@ -471,13 +476,7 @@ public class LogParserExtension : Extension() {
 				this.color = color
 				description = chunk
 			}
-			embeds.add(embedBuilder)
-		}
-
-		// Add extra embeds from the log
-		log.extraEmbeds.forEach { extraEmbed ->
-			embeds.add(extraEmbed)
-		}
+			embeds.add(embedBuilder)		}
 
 		return embeds
 	}
