@@ -1,12 +1,12 @@
 version: "3"
 services:
-  cozy-crashes:
-    image: ghcr.io/gabe-real/cozy-crashes:latest
+  kordex-modules:
+    image: ghcr.io/gabe-real/kordex-modules:latest
     platform: linux/arm64
-    container_name: cozy-crashes
+    container_name: kordex-modules
     restart: always
     volumes:
-      - "cozy-crashes-data:/data"
+      - "kordex-modules-data:/data"
     networks:
       - dokploy-network
     environment:
@@ -15,18 +15,18 @@ services:
       - "TOKEN=${TOKEN}"
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
-      - "com.centurylinklabs.watchtower.scope=cozy-crashes"
+      - "com.centurylinklabs.watchtower.scope=kordex-modules"
   watchtower:
     image: containrrr/watchtower
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-    command: --interval 60 --cleanup --rolling-restart --scope cozy-crashes --label-enable
+    command: --interval 60 --cleanup --rolling-restart --scope kordex-modules --label-enable
     restart: always
     environment:
       - WATCHTOWER_POLL_INTERVAL=60
 
 volumes:
-  cozy-crashes-data:
+  kordex-modules-data:
 
 networks:
   dokploy-network:
