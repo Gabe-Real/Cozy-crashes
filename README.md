@@ -1,7 +1,10 @@
 # Cozy: Crashes
 
 This repository contains a Discord bot that we make use of to help keep modded minecraft communities run smoothly.
-Certain features include:
+Certain features are directly forked from QuiltMC's [Cozy Discord](https://github.com/QuiltMC/cozy-discord), that is
+licensed under the Mozilla public license 2.0.
+
+These bots features include:
 
 * A minecraft crash report parsing system for modded and plugin-based servers
 * Support for common plugin platforms (Paper, Spigot, Bukkit, Velocity, BungeeCord, Waterfall)
