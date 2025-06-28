@@ -86,7 +86,7 @@ suspend fun setupQuilt() = ExtensibleBot(DISCORD_TOKEN) {
 	settings()
 
 	presence {
-		status = PresenceStatus.Online
+		status = PresenceStatus.DoNotDisturb
 		playing("with crashlogs \uD83D\uDCDD ")
 	}
 	about {
