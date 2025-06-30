@@ -41,7 +41,7 @@ private val PATTERNS = linkedMapOf(
 	"Starting Waterfall version ([^\\s]+)".toRegex(RegexOption.IGNORE_CASE) to LoaderType.Waterfall,
 	"Waterfall version ([^\\s]+) by PaperMC".toRegex(RegexOption.IGNORE_CASE) to LoaderType.Waterfall,
 	""".*Waterfall has reached end of life and is no longer maintained.*""".toRegex(RegexOption.IGNORE_CASE) to LoaderType.Waterfall,
-	"Loading Folia ([^\\s]+) for Minecraft".toRegex(RegexOption.IGNORE_CASE) to LoaderType.Folia,
+	"Loading Folia ([^\\s(]+) ?(?:\\([^)]*\\))? for Minecraft".toRegex(RegexOption.IGNORE_CASE) to LoaderType.Folia,
 
 	// Fallback patterns for basic Minecraft server detection (will use Bukkit as default)
 	"Starting minecraft server version ([\\d\\.]+)".toRegex(RegexOption.IGNORE_CASE) to LoaderType.Bukkit,
