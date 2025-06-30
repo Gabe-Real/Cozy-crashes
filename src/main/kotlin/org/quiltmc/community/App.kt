@@ -28,6 +28,7 @@ import org.quiltmc.community.extensions.InformationExtension
 import dev.gabereal.minecraft.MinecraftExtension
 import org.quiltmc.community.logs.*
 import org.quiltmc.community.logs.plugins.MissingPluginProcessor
+import org.quiltmc.community.logs.plugins.NotSupportMarkedPluginProcessor
 import org.quiltmc.community.logs.plugins.PluginErrorProcessor
 import org.quiltmc.community.logs.plugins.ServerVersionCompatibilityProcessor
 import org.quiltmc.community.logs.plugins.powergems.SeallibVersionProcessor
@@ -135,6 +136,7 @@ suspend fun setupQuilt() = ExtensibleBot(DISCORD_TOKEN) {
 			processor(MissingPluginProcessor())
 			processor(PluginErrorProcessor())
 			processor(ServerVersionCompatibilityProcessor())
+			processor(NotSupportMarkedPluginProcessor())
 
 			// Specific plugin processors:
 			// # PowerGems
