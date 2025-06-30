@@ -366,7 +366,8 @@ public class LogParserExtension : Extension() {
 						LoaderType.Bukkit,
 						LoaderType.Velocity,
 						LoaderType.Bungeecord,
-						LoaderType.Waterfall
+						LoaderType.Waterfall,
+						LoaderType.Folia
 					)
 					val isPluginPlatform = pluginPlatforms.any { log.getLoaderVersion(it) != null }
 					val itemType = if (isPluginPlatform) "Plugins" else "Mods"
