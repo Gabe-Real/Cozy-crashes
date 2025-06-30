@@ -18,4 +18,5 @@ public sealed class LoaderType(public val name: String) {
 	public object Velocity : LoaderType("velocity")
 	public object Bungeecord : LoaderType("bungeecord")
 	public object Waterfall : LoaderType("waterfall")
+	public object Folia : LoaderType("folia")
 }

@@ -17,7 +17,7 @@ private val PLUGIN_ERROR_PATTERNS = arrayOf(
 	"""Plugin ([^\s]+) has failed to load""".toRegex(RegexOption.IGNORE_CASE),
 	"""Error loading plugin ([^\s]+)""".toRegex(RegexOption.IGNORE_CASE),
 	"""Plugin ([^\s]+) threw an exception""".toRegex(RegexOption.IGNORE_CASE),
-	"""Could not load ([^\s]+) plugin""".toRegex(RegexOption.IGNORE_CASE),
+	"""Could not load '([^\s]+)' plugin""".toRegex(RegexOption.IGNORE_CASE),
 	"""Plugin ([^\s]+) is not compatible""".toRegex(RegexOption.IGNORE_CASE),
 	"""Plugin ([^\s]+) requires a newer version""".toRegex(RegexOption.IGNORE_CASE),
 	"""Outdated plugin: ([^\s]+)""".toRegex(RegexOption.IGNORE_CASE),

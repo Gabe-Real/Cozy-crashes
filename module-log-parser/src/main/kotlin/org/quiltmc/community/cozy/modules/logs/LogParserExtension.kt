@@ -181,10 +181,10 @@ public class LogParserExtension : Extension() {
 											}
 										}
 									}
-									
+
 									respond {
 										content = resultMessage
-										
+
 										// Split buttons into chunks of 5 (Discord's limit per action row)
 										successfulUploads.chunked(5).forEach { chunk ->
 											actionRow {
@@ -338,7 +338,8 @@ public class LogParserExtension : Extension() {
 							LoaderType.Bukkit,
 							LoaderType.Velocity,
 							LoaderType.Bungeecord,
-							LoaderType.Waterfall
+							LoaderType.Waterfall,
+							LoaderType.Folia
 						)
 
 						val isPluginPlatform = pluginPlatforms.any { log.getLoaderVersion(it) != null }
