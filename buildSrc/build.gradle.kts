@@ -9,8 +9,11 @@ plugins {
 }
 
 repositories {
+	mavenCentral()
 	google()
 	gradlePluginPortal()
+	maven("https://snapshots-repo.kordex.dev")
+	maven("https://releases-repo.kordex.dev")
 }
 
 dependencies {
@@ -24,6 +27,6 @@ dependencies {
 	implementation("com.expediagroup.graphql", "com.expediagroup.graphql.gradle.plugin", "7.1.4")
 	implementation("com.github.johnrengelman.shadow", "com.github.johnrengelman.shadow.gradle.plugin", "8.1.1")
 	implementation("com.google.devtools.ksp", "com.google.devtools.ksp.gradle.plugin", "2.1.21-2.0.1")
-	implementation("dev.kordex.gradle.plugins", "kordex", "1.4.1")
+	implementation("dev.kordex.gradle.plugins", "kordex", "1.7.1")
 	implementation("dev.yumi", "yumi-gradle-licenser", "1.2.0")
 }
