@@ -15,9 +15,14 @@ plugins {
 }
 
 allprojects {
-	repositories {
-		mavenLocal()
-	}
+repositories {
+	mavenLocal()
+	mavenCentral()
+	google()
+	gradlePluginPortal()
+	maven("https://snapshots-repo.kordex.dev")
+	maven("https://releases-repo.kordex.dev")
+}
 }
 
 dependencies {
@@ -28,7 +33,8 @@ dependencies {
 	implementation(libs.ktor.client.encoding)
 	implementation(libs.ktor.client.cio)
 	implementation(libs.bundles.ktor.client)
-
+	
+	implementation("dev.kordex.gradle.plugins", "kordex", "1.7.1")
 
 	implementation(libs.commons.text)
 	implementation(libs.homoglyph)

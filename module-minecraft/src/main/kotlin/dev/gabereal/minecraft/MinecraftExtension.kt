@@ -9,6 +9,7 @@ package dev.gabereal.minecraft
 import dev.gabereal.minecraft.collections.PatchNote
 import dev.gabereal.minecraft.collections.PatchNoteEntries
 import dev.gabereal.minecraft.collections.PatchNoteEntry
+import dev.gabereal.minecraft.collections.VersionManifest
 import dev.gabereal.minecraft.database.DatabaseConfig
 import dev.gabereal.minecraft.database.MinecraftNotificationService
 import dev.kord.common.annotation.KordPreview
@@ -62,8 +63,11 @@ private const val PAGINATOR_TIMEOUT = 60_000L  // One minute
 private const val CHUNK_SIZE = 10
 private val MAIN_GUILD_ID = envOrNull("MAIN_GUILD_ID")
 
+// 1) Piston‑Meta manifest for “latest.release” & “latest.snapshot”
+private const val MOJANG_MANIFEST_URL = "https://piston-meta.mojang.com/mc/game/version_manifest.json"
+// 2) **Old** patchnotes API (your existing endpoint)
+private const val PATCHNOTE_URL = "https://launchercontent.mojang.com/v2/javaPatchNotes.json"
 private const val BASE_URL = "https://launchercontent.mojang.com/v2"
-private const val JSON_URL = "$BASE_URL/javaPatchNotes.json"
 
 private const val CHECK_DELAY = 60L
 
@@ -523,31 +527,35 @@ public class MinecraftExtension : Extension() {
 		}
 	}
 
-	public suspend fun populateVersions() {
-		currentEntries = client.get(JSON_URL).body()
+public suspend fun populateVersions() {
+	// Load your old-patchnotes API once at startup
+	currentEntries = client.get(PATCHNOTE_URL).body()
+	knownVersions.addAll(currentEntries.entries.map { it.version })
+}
 
-		currentEntries.entries.forEach { knownVersions.add(it.version) }
-	}
+@Suppress("TooGenericExceptionCaught")
+public suspend fun checkTask() {
+	try {
+		// 1) Grab the manifest to see if latest.release/snapshot changed
+		val manifest = client.get(MOJANG_MANIFEST_URL).body<VersionManifest>()
 
-	@Suppress("TooGenericExceptionCaught")
-	public suspend fun checkTask() {
-		try {
-			val now = Clock.System.now()
+		listOf(manifest.latest.snapshot, manifest.latest.release).forEach { vid ->
+			if (vid !in knownVersions) {
+				// 2) Fetch from your OLD API, then filter down to this version
+			   val allNotes = client.get(PATCHNOTE_URL).body<PatchNoteEntries>()
+				val note = allNotes.entries.find { it.version == vid }
+					?: throw IllegalStateException("Patchnotes for $vid not found")
 
-			currentEntries = client.get(JSON_URL + "?cbt=${now.epochSeconds}").body()
-
-			currentEntries.entries.forEach {
-				if (it.version !in knownVersions) {
-					relayUpdate(it.get())
-					knownVersions.add(it.version)
-				}
+			   relayUpdate(note.get())
+				knownVersions.add(vid)
 			}
-		} catch (t: Throwable) {
-			logger.error(t) { "Check task run failed" }
-		} finally {
-			checkTask = scheduler.schedule(CHECK_DELAY, callback = ::checkTask)
 		}
+	} catch (t: Throwable) {
+		logger.error(t) { "Check task run failed" }
+	} finally {
+		checkTask = scheduler.schedule(CHECK_DELAY, callback = ::checkTask)
 	}
+}
 
 	@Suppress("TooGenericExceptionCaught")
 	public suspend fun relayUpdate(patchNote: PatchNote): Any {
@@ -687,24 +695,18 @@ public class MinecraftExtension : Extension() {
 			}
 		}
 
-		embed {
-			title = patchNote.title
-			color = DISCORD_GREEN
-
-			description = truncated
-
-			if (remaining > 0) {
-				description += "\n\n[... $remaining more lines]"
-			}
-
-			thumbnail {
-				url = "$BASE_URL${patchNote.image.url}"
-			}
-
-			footer {
-				text = "URL: https://quiltmc.org/mc-patchnotes/#${patchNote.version}"
-			}
-		}
+	   embed {
+		   title = patchNote.title
+		   color = DISCORD_GREEN
+		   description = truncated
+		   if (remaining > 0) description += "\n\n[... $remaining more lines]"
+		   patchNote.image?.url?.let { imageUrl ->
+			   thumbnail { url = "$BASE_URL$imageUrl" }
+		   }
+		   footer {
+			   text = "URL: https://quiltmc.org/mc-patchnotes/#${patchNote.version}"
+		   }
+	   }
 	}
 
 	private suspend fun TopGuildMessageChannel.relay(patchNote: PatchNote, pingRoleId: Snowflake? = null) {
@@ -801,4 +803,3 @@ private suspend fun main() {
 
 	exitProcess(0)
 }
-
