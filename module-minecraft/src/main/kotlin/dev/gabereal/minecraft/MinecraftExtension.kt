@@ -80,7 +80,7 @@ public class MinecraftExtension : Extension() {
 
 			ephemeralSubCommand {
 				name = "latest".toKey()
-				description = "Get the latest Minecraft version information".toKey()
+				description = "Get the latest Minecraft release with changelog".toKey()
 
 				action {
 					val manifest = updateService.getLatestVersions()
@@ -91,43 +91,71 @@ public class MinecraftExtension : Extension() {
 						return@action
 					}
 
+					// Get the latest release version
+					val latestReleaseVersion = manifest.versions.find { 
+						it.id == manifest.latest.release && it.type == "release" 
+					}
+
+					if (latestReleaseVersion == null) {
+						respond { 
+							content = "❌ **Could not find latest release version.** Please try again later." 
+						}
+						return@action
+					}
+
+					// Process the latest release to get changelog
+					val update = updateService.processLatestRelease(latestReleaseVersion, manifest)
+					if (update == null) {
+						respond { 
+							content = "❌ **Failed to process latest release information.** Please try again later." 
+						}
+						return@action
+					}
+
 					respond {
 						embed {
-							title = "🎮 Latest Minecraft Versions"
+							title = update.title
 							color = DISCORD_GREEN
 
+							description = update.description
+
 							field {
-								name = "Latest Release"
-								value = "**${manifest.latest.release}**"
+								name = "Version"
+								value = update.version
 								inline = true
 							}
 
 							field {
-								name = "Latest Snapshot"
-								value = "**${manifest.latest.snapshot}**"
+								name = "Released"
+								value = "<t:${update.releaseTime.epochSeconds}:F>"
 								inline = true
 							}
 
-							val recentReleases = manifest.versions.filter { it.type == "release" }.take(5)
-							if (recentReleases.isNotEmpty()) {
-								field {
-									name = "Recent Releases"
-									value = recentReleases.joinToString("\n") { "• ${it.id}" }
-									inline = false
+							field {
+								name = "Type"
+								value = "Official Release"
+								inline = true
+							}
+
+							if (update.imageUrl != null) {
+								thumbnail {
+									url = update.imageUrl
 								}
 							}
 
 							footer {
-								text = "Data from Mojang API"
+								text = "Latest Minecraft Release"
 							}
+
+							timestamp = update.releaseTime
 						}
 
 						actionRow {
+							linkButton(update.changelogUrl) {
+								label = "📋 View Full Changelog"
+							}
 							linkButton("https://www.minecraft.net/en-us/download") {
 								label = "⬇️ Download Minecraft"
-							}
-							linkButton("https://www.minecraft.net/en-us/updates") {
-								label = "📰 View Updates"
 							}
 						}
 					}

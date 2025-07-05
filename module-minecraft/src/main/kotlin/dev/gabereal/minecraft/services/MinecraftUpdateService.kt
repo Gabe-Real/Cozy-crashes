@@ -97,6 +97,16 @@ public class MinecraftUpdateService {
         return newUpdates.sortedByDescending { it.releaseTime }
     }
     
+    /**
+     * Process the latest release to get detailed changelog information
+     */
+    public suspend fun processLatestRelease(
+        version: MinecraftVersion,
+        manifest: MinecraftVersionManifest
+    ): ProcessedMinecraftUpdate? {
+        return processVersionUpdate(version, manifest)
+    }
+
     private suspend fun processVersionUpdate(
         version: MinecraftVersion,
         manifest: MinecraftVersionManifest
@@ -109,15 +119,15 @@ public class MinecraftUpdateService {
         val (title, description) = when {
             isNewRelease -> {
                 "🎉 Minecraft ${version.id} Released!" to 
-                "A new version of Minecraft has been released! Update your game to experience the latest features, improvements, and bug fixes."
+                getChangelogContent(version.id, false)
             }
             isSnapshot -> {
                 "📸 Minecraft Snapshot ${version.id}" to
-                "A new snapshot is available for testing! This development version contains experimental features and changes that may be included in future releases."
+                getChangelogContent(version.id, true)
             }
             version.type == "release" -> {
                 "🎮 Minecraft ${version.id} Update" to
-                "Minecraft has been updated to version ${version.id}. Check out the changelog for details on what's new!"
+                getChangelogContent(version.id, false)
             }
             else -> {
                 "🔧 Minecraft ${version.id} (${version.type})" to
@@ -176,6 +186,62 @@ public class MinecraftUpdateService {
         }
     }
     
+    private suspend fun getChangelogContent(version: String, isSnapshot: Boolean): String {
+        return try {
+            // Try to get actual changelog content from minecraft.net
+            val changelogUrl = findChangelogUrl(version, isSnapshot)
+            val response = client.get(changelogUrl)
+            
+            if (response.status.value in 200..299) {
+                val html: String = response.body()
+                val document: Document = Jsoup.parse(html)
+                
+                // Try to extract changelog content from various selectors
+                val contentSelectors = listOf(
+                    ".article-content",
+                    ".article-body", 
+                    ".content",
+                    ".article-text",
+                    ".post-content",
+                    "main article",
+                    ".article"
+                )
+                
+                for (selector in contentSelectors) {
+                    val contentElement = document.select(selector).first()
+                    if (contentElement != null) {
+                        var content = contentElement.text().trim()
+                        
+                        // Clean up the content
+                        content = content.replace(Regex("\\s+"), " ")
+                        
+                        // Truncate if too long for Discord
+                        if (content.length > 1800) {
+                            content = content.substring(0, 1800) + "..."
+                        }
+                        
+                        if (content.isNotBlank() && content.length > 50) {
+                            return content
+                        }
+                    }
+                }
+            }
+            
+            // Fallback descriptions
+            when {
+                isSnapshot -> "A new snapshot is available for testing! This development version contains experimental features and changes that may be included in future releases."
+                else -> "A new version of Minecraft has been released! Update your game to experience the latest features, improvements, and bug fixes."
+            }
+        } catch (e: Exception) {
+            logger.debug(e) { "Failed to fetch changelog content for $version" }
+            // Fallback descriptions
+            when {
+                isSnapshot -> "A new snapshot is available for testing! This development version contains experimental features and changes that may be included in future releases."
+                else -> "A new version of Minecraft has been released! Update your game to experience the latest features, improvements, and bug fixes."
+            }
+        }
+    }
+
     private fun getVersionImageUrl(version: String, isSnapshot: Boolean): String {
         return if (isSnapshot) {
             "https://www.minecraft.net/content/dam/games/minecraft/key-art/Experimental-Gameplay_Thumbnail.jpg"
