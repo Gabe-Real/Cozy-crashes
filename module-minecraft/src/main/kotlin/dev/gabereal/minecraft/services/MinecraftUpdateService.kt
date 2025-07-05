@@ -210,10 +210,7 @@ public class MinecraftUpdateService {
                 for (selector in contentSelectors) {
                     val contentElement = document.select(selector).first()
                     if (contentElement != null) {
-                        var content = contentElement.text().trim()
-                        
-                        // Clean up the content
-                        content = content.replace(Regex("\\s+"), " ")
+                        var content = formatChangelogForDiscord(contentElement)
                         
                         // Truncate if too long for Discord
                         if (content.length > 1800) {
@@ -240,6 +237,75 @@ public class MinecraftUpdateService {
                 else -> "A new version of Minecraft has been released! Update your game to experience the latest features, improvements, and bug fixes."
             }
         }
+    }
+    
+    private fun formatChangelogForDiscord(element: org.jsoup.nodes.Element): String {
+        val result = StringBuilder()
+        
+        // Process different types of elements to preserve formatting
+        for (child in element.children()) {
+            when (child.tagName().lowercase()) {
+                "h1", "h2", "h3", "h4", "h5", "h6" -> {
+                    val text = child.text().trim()
+                    if (text.isNotBlank()) {
+                        result.append("\n**${text}**\n")
+                    }
+                }
+                "p" -> {
+                    val text = child.text().trim()
+                    if (text.isNotBlank()) {
+                        result.append("${text}\n\n")
+                    }
+                }
+                "ul", "ol" -> {
+                    for (li in child.select("li")) {
+                        val listItem = li.text().trim()
+                        if (listItem.isNotBlank()) {
+                            result.append("• ${listItem}\n")
+                        }
+                    }
+                    result.append("\n")
+                }
+                "li" -> {
+                    val listItem = child.text().trim()
+                    if (listItem.isNotBlank()) {
+                        result.append("• ${listItem}\n")
+                    }
+                }
+                "strong", "b" -> {
+                    val text = child.text().trim()
+                    if (text.isNotBlank()) {
+                        result.append("**${text}** ")
+                    }
+                }
+                "em", "i" -> {
+                    val text = child.text().trim()
+                    if (text.isNotBlank()) {
+                        result.append("*${text}* ")
+                    }
+                }
+                else -> {
+                    val text = child.text().trim()
+                    if (text.isNotBlank()) {
+                        result.append("${text} ")
+                    }
+                }
+            }
+        }
+        
+        // If no formatted content was found, fall back to plain text
+        if (result.isBlank()) {
+            result.append(element.text().trim())
+        }
+        
+        // Clean up the result
+        var content = result.toString()
+            .replace(Regex("\\n{3,}"), "\n\n") // Max 2 consecutive newlines
+            .replace(Regex("\\s+"), " ") // Normalize whitespace but preserve newlines
+            .replace(" \n", "\n") // Remove spaces before newlines
+            .trim()
+        
+        return content
     }
 
     private fun getVersionImageUrl(version: String, isSnapshot: Boolean): String {
