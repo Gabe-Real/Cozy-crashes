@@ -7,6 +7,7 @@
 package dev.gabereal.minecraft.services
 
 import dev.gabereal.minecraft.collections.*
+import dev.gabereal.minecraft.database.MinecraftNotificationService
 import io.github.oshai.kotlinlogging.KotlinLogging
 import io.ktor.client.*
 import io.ktor.client.call.*
@@ -15,6 +16,7 @@ import io.ktor.client.request.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
+import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.json.Json
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
@@ -44,6 +46,7 @@ public class MinecraftUpdateService {
     
     private var lastCheckedVersions: Set<String> = emptySet()
     private var lastCheckTime: Instant = Clock.System.now()
+    private var isFirstRun: Boolean = true
     
     /**
      * Get the latest Minecraft version information
@@ -70,6 +73,32 @@ public class MinecraftUpdateService {
     public suspend fun checkForUpdates(): List<ProcessedMinecraftUpdate> {
         val manifest = getLatestVersions() ?: return emptyList()
         val currentTime = Clock.System.now()
+        
+        // On first run, mark all existing versions as already seen to prevent spam
+        if (isFirstRun) {
+            logger.info { "First run detected - marking existing versions as already processed to prevent notification spam" }
+            lastCheckedVersions = manifest.versions.take(50).map { it.id }.toSet() // Track last 50 versions
+            lastCheckTime = currentTime
+            isFirstRun = false
+            
+            // Also add these versions to the database as known but processed
+            for (version in manifest.versions.take(20)) { // Add top 20 to database
+                try {
+                    val releaseTime = Instant.parse(version.releaseTime)
+                    MinecraftNotificationService.addKnownVersion(
+                        version = version.id,
+                        versionType = version.type,
+                        releaseTime = releaseTime.toLocalDateTime(kotlinx.datetime.TimeZone.UTC),
+                        processed = true // Mark as already processed
+                    )
+                } catch (e: Exception) {
+                    logger.debug(e) { "Failed to add known version ${version.id} on first run" }
+                }
+            }
+            
+            logger.info { "First run initialization complete - future updates will be properly notified" }
+            return emptyList() // Don't send notifications on first run
+        }
         
         // Get recent versions (within the last 30 days or versions we haven't seen)
         val recentVersions = manifest.versions.filter { version ->
