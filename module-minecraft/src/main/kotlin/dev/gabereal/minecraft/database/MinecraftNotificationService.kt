@@ -21,8 +21,17 @@ public object MinecraftNotificationConfigs : LongIdTable("minecraft_notification
     public val channelId: Column<Long> = long("channel_id")
     public val pingRoleId: Column<Long?> = long("ping_role_id").nullable()
     public val enabled: Column<Boolean> = bool("enabled").default(true)
+    public val includeSnapshots: Column<Boolean> = bool("include_snapshots").default(false)
     public val createdAt: Column<kotlinx.datetime.LocalDateTime> = datetime("created_at").defaultExpression(CurrentDateTime)
     public val updatedAt: Column<kotlinx.datetime.LocalDateTime> = datetime("updated_at").defaultExpression(CurrentDateTime)
+}
+
+public object MinecraftKnownVersions : LongIdTable("minecraft_known_versions") {
+    public val version: Column<String> = varchar("version", 50).uniqueIndex()
+    public val versionType: Column<String> = varchar("version_type", 20)
+    public val releaseTime: Column<kotlinx.datetime.LocalDateTime> = datetime("release_time")
+    public val processed: Column<Boolean> = bool("processed").default(false)
+    public val createdAt: Column<kotlinx.datetime.LocalDateTime> = datetime("created_at").defaultExpression(CurrentDateTime)
 }
 
 public data class MinecraftNotificationConfig(
@@ -30,7 +39,8 @@ public data class MinecraftNotificationConfig(
     val guildId: Long,
     val channelId: Long,
     val pingRoleId: Long?,
-    val enabled: Boolean
+    val enabled: Boolean,
+    val includeSnapshots: Boolean
 )
 
 public object MinecraftNotificationService {
@@ -63,7 +73,8 @@ public object MinecraftNotificationService {
                             guildId = it[MinecraftNotificationConfigs.guildId],
                             channelId = it[MinecraftNotificationConfigs.channelId],
                             pingRoleId = it[MinecraftNotificationConfigs.pingRoleId],
-                            enabled = it[MinecraftNotificationConfigs.enabled]
+                            enabled = it[MinecraftNotificationConfigs.enabled],
+                            includeSnapshots = it[MinecraftNotificationConfigs.includeSnapshots]
                         )
                     }
             }
@@ -76,7 +87,8 @@ public object MinecraftNotificationService {
     public fun setConfig(
         guildId: Snowflake,
         channelId: Snowflake,
-        pingRoleId: Snowflake? = null
+        pingRoleId: Snowflake? = null,
+        includeSnapshots: Boolean = false
     ): MinecraftNotificationConfig? {
         if (!isDatabaseAvailable()) return null
         
@@ -91,6 +103,7 @@ public object MinecraftNotificationService {
                     MinecraftNotificationConfigs.update({ MinecraftNotificationConfigs.guildId eq guildId.value.toLong() }) {
                         it[MinecraftNotificationConfigs.channelId] = channelId.value.toLong()
                         it[MinecraftNotificationConfigs.pingRoleId] = pingRoleId?.value?.toLong()
+                        it[MinecraftNotificationConfigs.includeSnapshots] = includeSnapshots
                         it[MinecraftNotificationConfigs.updatedAt] = kotlinx.datetime.Clock.System.now().toLocalDateTime(kotlinx.datetime.TimeZone.UTC)
                     }
                 } else {
@@ -99,6 +112,7 @@ public object MinecraftNotificationService {
                         it[MinecraftNotificationConfigs.guildId] = guildId.value.toLong()
                         it[MinecraftNotificationConfigs.channelId] = channelId.value.toLong()
                         it[MinecraftNotificationConfigs.pingRoleId] = pingRoleId?.value?.toLong()
+                        it[MinecraftNotificationConfigs.includeSnapshots] = includeSnapshots
                     }
                 }
                 
@@ -110,8 +124,8 @@ public object MinecraftNotificationService {
         }
     }
     
-    public fun removeConfig(guildId: Snowflake): Boolean {
-        if (!isDatabaseAvailable()) return false
+    public fun removeConfig(guildId: Snowflake): Boolean? {
+        if (!isDatabaseAvailable()) return null
         
         return try {
             transaction {
@@ -122,23 +136,41 @@ public object MinecraftNotificationService {
             }
         } catch (e: Exception) {
             logger.error(e) { "Failed to remove config for guild $guildId" }
-            false
+            null
         }
     }
     
-    public fun setEnabled(guildId: Snowflake, enabled: Boolean): Boolean {
-        if (!isDatabaseAvailable()) return false
+    public fun setEnabled(guildId: Snowflake, enabled: Boolean): Boolean? {
+        if (!isDatabaseAvailable()) return null
         
         return try {
             transaction {
-                MinecraftNotificationConfigs.update({ MinecraftNotificationConfigs.guildId eq guildId.value.toLong() }) {
+                val updated = MinecraftNotificationConfigs.update({ MinecraftNotificationConfigs.guildId eq guildId.value.toLong() }) {
                     it[MinecraftNotificationConfigs.enabled] = enabled
                     it[MinecraftNotificationConfigs.updatedAt] = kotlinx.datetime.Clock.System.now().toLocalDateTime(kotlinx.datetime.TimeZone.UTC)
-                } > 0
+                }
+                updated > 0
             }
         } catch (e: Exception) {
             logger.error(e) { "Failed to set enabled status for guild $guildId" }
-            false
+            null
+        }
+    }
+    
+    public fun setIncludeSnapshots(guildId: Snowflake, includeSnapshots: Boolean): Boolean? {
+        if (!isDatabaseAvailable()) return null
+        
+        return try {
+            transaction {
+                val updated = MinecraftNotificationConfigs.update({ MinecraftNotificationConfigs.guildId eq guildId.value.toLong() }) {
+                    it[MinecraftNotificationConfigs.includeSnapshots] = includeSnapshots
+                    it[MinecraftNotificationConfigs.updatedAt] = kotlinx.datetime.Clock.System.now().toLocalDateTime(kotlinx.datetime.TimeZone.UTC)
+                }
+                updated > 0
+            }
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to set snapshot inclusion for guild $guildId" }
+            null
         }
     }
     
@@ -158,12 +190,86 @@ public object MinecraftNotificationService {
                             guildId = it[MinecraftNotificationConfigs.guildId],
                             channelId = it[MinecraftNotificationConfigs.channelId],
                             pingRoleId = it[MinecraftNotificationConfigs.pingRoleId],
-                            enabled = it[MinecraftNotificationConfigs.enabled]
+                            enabled = it[MinecraftNotificationConfigs.enabled],
+                            includeSnapshots = it[MinecraftNotificationConfigs.includeSnapshots]
                         )
                     }
             }
         } catch (e: Exception) {
             logger.error(e) { "Failed to get enabled configs" }
+            emptyList()
+        }
+    }
+    
+    // Version tracking methods
+    
+    public fun isVersionKnown(version: String): Boolean {
+        if (!isDatabaseAvailable()) return false
+        
+        return try {
+            transaction {
+                MinecraftKnownVersions
+                    .select { MinecraftKnownVersions.version eq version }
+                    .count() > 0
+            }
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to check if version $version is known" }
+            false
+        }
+    }
+    
+    public fun addKnownVersion(
+        version: String, 
+        versionType: String, 
+        releaseTime: kotlinx.datetime.LocalDateTime,
+        processed: Boolean = false
+    ): Boolean {
+        if (!isDatabaseAvailable()) return false
+        
+        return try {
+            transaction {
+                MinecraftKnownVersions.insertIgnore {
+                    it[MinecraftKnownVersions.version] = version
+                    it[MinecraftKnownVersions.versionType] = versionType
+                    it[MinecraftKnownVersions.releaseTime] = releaseTime
+                    it[MinecraftKnownVersions.processed] = processed
+                }
+                true
+            }
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to add known version $version" }
+            false
+        }
+    }
+    
+    public fun markVersionProcessed(version: String): Boolean {
+        if (!isDatabaseAvailable()) return false
+        
+        return try {
+            transaction {
+                MinecraftKnownVersions.update({ MinecraftKnownVersions.version eq version }) {
+                    it[processed] = true
+                }
+                true
+            }
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to mark version $version as processed" }
+            false
+        }
+    }
+    
+    public fun getUnprocessedVersions(): List<String> {
+        if (!isDatabaseAvailable()) return emptyList()
+        
+        return try {
+            transaction {
+                MinecraftKnownVersions
+                    .select { MinecraftKnownVersions.processed eq false }
+                    .orderBy(MinecraftKnownVersions.releaseTime, SortOrder.DESC)
+                    .map { it[MinecraftKnownVersions.version] }
+            }
+        } catch (e: Exception) {
+            logger.error(e) { "Failed to get unprocessed versions" }
             emptyList()
         }
     }

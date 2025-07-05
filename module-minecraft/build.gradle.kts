@@ -31,6 +31,9 @@ dependencies {
 	implementation("org.jetbrains.exposed:exposed-jdbc:0.48.0")
 	implementation("org.jetbrains.exposed:exposed-kotlin-datetime:0.48.0")
 
+	// Additional dependencies for new implementation
+	implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.6.0")
+
 	implementation(platform(libs.kotlin.bom))
 	implementation(libs.kotlin.stdlib)
 }

@@ -7,13 +7,34 @@
 package dev.gabereal.minecraft.collections
 
 import kotlinx.serialization.Serializable
+import kotlinx.datetime.Instant
 
 @Serializable
-public data class PatchNote(
-	val body: String,
+public data class MinecraftVersionDetails(
 	val id: String,
-	val image: PatchNoteImage,
-	val title: String,
 	val type: String,
+	val time: String,
+	val releaseTime: String,
+	val assets: String?,
+	val downloads: Map<String, DownloadInfo>?
+)
+
+@Serializable
+public data class DownloadInfo(
+	val sha1: String,
+	val size: Long,
+	val url: String
+)
+
+@Serializable 
+public data class ProcessedMinecraftUpdate(
 	val version: String,
+	val type: String,
+	val releaseTime: Instant,
+	val title: String,
+	val description: String,
+	val imageUrl: String?,
+	val changelogUrl: String,
+	val isSnapshot: Boolean,
+	val isNewRelease: Boolean
 )

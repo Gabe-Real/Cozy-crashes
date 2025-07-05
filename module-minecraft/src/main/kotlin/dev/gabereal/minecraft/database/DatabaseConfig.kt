@@ -66,7 +66,7 @@ public object DatabaseConfig {
         
         // Create tables if they don't exist
         transaction {
-            SchemaUtils.create(MinecraftNotificationConfigs)
+            SchemaUtils.create(MinecraftNotificationConfigs, MinecraftKnownVersions)
         }
         
         logger.info { "Database initialization completed" }

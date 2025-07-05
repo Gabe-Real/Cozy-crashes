@@ -9,7 +9,15 @@ package dev.gabereal.minecraft.collections
 import kotlinx.serialization.Serializable
 
 @Serializable
-public data class PatchNoteEntries(
-	val entries: List<PatchNoteEntry>,
-	val version: Int,
+public data class MinecraftNewsEntry(
+	val title: String,
+	val description: String,
+	val publishedDate: String,
+	val url: String,
+	val imageUrl: String?
+)
+
+@Serializable
+public data class MinecraftNews(
+	val entries: List<MinecraftNewsEntry>
 )

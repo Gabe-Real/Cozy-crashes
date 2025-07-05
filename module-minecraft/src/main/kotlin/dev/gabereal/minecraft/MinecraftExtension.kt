@@ -6,19 +6,14 @@
 
 package dev.gabereal.minecraft
 
-import dev.gabereal.minecraft.collections.PatchNote
-import dev.gabereal.minecraft.collections.PatchNoteEntries
-import dev.gabereal.minecraft.collections.PatchNoteEntry
+import dev.gabereal.minecraft.collections.*
 import dev.gabereal.minecraft.database.DatabaseConfig
 import dev.gabereal.minecraft.database.MinecraftNotificationService
+import dev.gabereal.minecraft.services.MinecraftUpdateService
 import dev.kord.common.annotation.KordPreview
 import dev.kord.common.entity.Permission
 import dev.kord.common.entity.Snowflake
 import dev.kord.core.behavior.channel.createMessage
-import dev.kord.core.behavior.edit
-import dev.kord.core.builder.components.emoji
-import dev.kord.core.entity.Message
-import dev.kord.core.entity.ReactionEmoji
 import dev.kord.core.entity.Role
 import dev.kord.core.entity.channel.Channel
 import dev.kord.core.entity.channel.NewsChannel
@@ -30,72 +25,38 @@ import dev.kord.rest.builder.message.actionRow
 import dev.kord.rest.builder.message.embed
 import dev.kordex.core.DISCORD_FUCHSIA
 import dev.kordex.core.DISCORD_GREEN
+import dev.kordex.core.DISCORD_YELLOW
 import dev.kordex.core.checks.hasPermission
 import dev.kordex.core.commands.Arguments
 import dev.kordex.core.commands.application.slash.ephemeralSubCommand
 import dev.kordex.core.commands.converters.impl.channel as channelConverter
-import dev.kordex.core.commands.converters.impl.message
+import dev.kordex.core.commands.converters.impl.optionalBoolean
+import dev.kordex.core.commands.converters.impl.optionalBoolean
 import dev.kordex.core.commands.converters.impl.optionalRole
 import dev.kordex.core.commands.converters.impl.optionalString
-import dev.kordex.core.commands.converters.impl.string
 import dev.kordex.core.extensions.Extension
 import dev.kordex.core.extensions.ephemeralSlashCommand
 import dev.kordex.core.i18n.toKey
 import dev.kordex.core.pagination.pages.Page
-import dev.kordex.core.utils.envOrNull
 import dev.kordex.core.utils.scheduling.Scheduler
 import dev.kordex.core.utils.scheduling.Task
 import dev.kordex.core.utils.toReaction
-import dev.kordex.parser.Cursor
 import io.github.oshai.kotlinlogging.KotlinLogging
-import io.ktor.client.*
-import io.ktor.client.call.*
-import io.ktor.client.plugins.contentnegotiation.*
-import io.ktor.client.request.*
-import io.ktor.serialization.kotlinx.json.*
 import kotlinx.datetime.Clock
-import kotlinx.serialization.json.Json
-import org.apache.commons.text.StringEscapeUtils
-import kotlin.system.exitProcess
+import kotlinx.datetime.toLocalDateTime
+import kotlinx.datetime.TimeZone
 
 private const val PAGINATOR_TIMEOUT = 60_000L  // One minute
 private const val CHUNK_SIZE = 10
-private val MAIN_GUILD_ID = envOrNull("MAIN_GUILD_ID")
-
-private const val BASE_URL = "https://launchercontent.mojang.com/v2"
-private const val JSON_URL = "$BASE_URL/javaPatchNotes.json"
-
-private const val CHECK_DELAY = 60L
-
-private val LINK_REGEX = "<a href=\"?(?<url>[^\"\\s]+)\"?[^>]*>(?<text>[^<]+)</a>".toRegex()
-
-@Suppress("MagicNumber", "UnderscoresInNumericLiterals")
-private val CHANNELS: List<Snowflake> = listOf(
-	Snowflake(1384066726613876789),  // Community
-)
+private const val CHECK_DELAY = 300L // 5 minutes
 
 public class MinecraftExtension : Extension() {
 	override val name: String = "minecraft"
 
 	private val logger = KotlinLogging.logger { }
-
-	private val client = HttpClient {
-		install(ContentNegotiation) {
-			json(
-				Json {
-					ignoreUnknownKeys = true
-				}
-			)
-		}
-
-		expectSuccess = true
-	}
-
 	private val scheduler = Scheduler()
-
 	private var checkTask: Task? = null
-	private var knownVersions: MutableSet<String> = mutableSetOf()
-	private lateinit var currentEntries: PatchNoteEntries
+	private val updateService = MinecraftUpdateService()
 
 	@OptIn(KordPreview::class)
 	override suspend fun setup() {
@@ -107,157 +68,199 @@ public class MinecraftExtension : Extension() {
 			logger.error(e) { "Failed to initialize database - notification features will be disabled" }
 		}
 
-		populateVersions()
-
-		checkTask = scheduler.schedule(CHECK_DELAY, callback = ::checkTask)
+		// Start periodic update checking
+		checkTask = scheduler.schedule(CHECK_DELAY, callback = ::checkForUpdates)
+		logger.info { "Minecraft update checking started (every $CHECK_DELAY seconds)" }
 
 		ephemeralSlashCommand {
-			name = "mc".toKey()
-			description = "Commands related to Minecraft updates".toKey()
+			name = "minecraft".toKey()
+			description = "Commands related to Minecraft updates and notifications".toKey()
 
 			allowInDms = false
 
-			guild(guildId)
-
-			ephemeralSubCommand(::CheckArguments) {
-				name = "get".toKey()
-				description = "Retrieve the patch notes for a given Minecraft version, or the latest if not supplied".toKey()
+			ephemeralSubCommand {
+				name = "latest".toKey()
+				description = "Get the latest Minecraft version information".toKey()
 
 				action {
-					if (!::currentEntries.isInitialized) {
-						respond { content = "Still setting up - try again a bit later!" }
-						return@action
-					}
-
-					val patch = if (arguments.version == null) {
-						currentEntries.entries.first()
-					} else {
-						currentEntries.entries.firstOrNull { it.version.equals(arguments.version, true) }
-					}
-
-					if (patch == null) {
-						respond { content = "Unknown version supplied: `${arguments.version}`" }
+					val manifest = updateService.getLatestVersions()
+					if (manifest == null) {
+						respond { 
+							content = "❌ **Failed to fetch Minecraft version information.** The Mojang API may be temporarily unavailable." 
+						}
 						return@action
 					}
 
 					respond {
-						patchNotes(patch.get())
+						embed {
+							title = "🎮 Latest Minecraft Versions"
+							color = DISCORD_GREEN
+
+							field {
+								name = "Latest Release"
+								value = "**${manifest.latest.release}**"
+								inline = true
+							}
+
+							field {
+								name = "Latest Snapshot"
+								value = "**${manifest.latest.snapshot}**"
+								inline = true
+							}
+
+							val recentReleases = manifest.versions.filter { it.type == "release" }.take(5)
+							if (recentReleases.isNotEmpty()) {
+								field {
+									name = "Recent Releases"
+									value = recentReleases.joinToString("\n") { "• ${it.id}" }
+									inline = false
+								}
+							}
+
+							footer {
+								text = "Data from Mojang API"
+							}
+						}
+
+						actionRow {
+							linkButton("https://www.minecraft.net/en-us/download") {
+								label = "⬇️ Download Minecraft"
+							}
+							linkButton("https://www.minecraft.net/en-us/updates") {
+								label = "📰 View Updates"
+							}
+						}
+					}
+				}
+			}
+
+			ephemeralSubCommand(::VersionArguments) {
+				name = "version".toKey()
+				description = "Get detailed information about a specific Minecraft version".toKey()
+
+				action {
+					val manifest = updateService.getLatestVersions()
+					if (manifest == null) {
+						respond { 
+							content = "❌ **Failed to fetch Minecraft version information.** The Mojang API may be temporarily unavailable." 
+						}
+						return@action
+					}
+
+					val version = manifest.versions.find { 
+						it.id.equals(arguments.version ?: manifest.latest.release, ignoreCase = true) 
+					}
+
+					if (version == null) {
+						respond { 
+							content = "❌ **Version '${arguments.version ?: "latest"}' not found.** Use `/minecraft latest` to see available versions." 
+						}
+						return@action
+					}
+
+					respond {
+						embed {
+							title = "📦 Minecraft ${version.id}"
+							color = when (version.type) {
+								"release" -> DISCORD_GREEN
+								"snapshot" -> DISCORD_YELLOW
+								else -> DISCORD_FUCHSIA
+							}
+
+							field {
+								name = "Version Type"
+								value = version.type.replaceFirstChar { it.uppercase() }
+								inline = true
+							}
+
+							field {
+								name = "Release Time"
+								value = "<t:${kotlinx.datetime.Instant.parse(version.releaseTime).epochSeconds}:F>"
+								inline = true
+							}
+
+							if (version.type == "release") {
+								description = "This is an official release version of Minecraft."
+							} else if (version.type == "snapshot") {
+								description = "This is a development snapshot containing experimental features."
+							}
+
+							footer {
+								text = "Version ID: ${version.id}"
+							}
+						}
+
+						actionRow {
+							linkButton("https://www.minecraft.net/en-us/updates") {
+								label = "📋 View Changelog"
+							}
+						}
 					}
 				}
 			}
 
 			ephemeralSubCommand {
 				name = "versions".toKey()
-				description = "Get a list of patch note versions.".toKey()
+				description = "Browse all available Minecraft versions".toKey()
 
 				action {
-					if (!::currentEntries.isInitialized) {
-						respond { content = "Still setting up - try again a bit later!" }
-
+					val manifest = updateService.getLatestVersions()
+					if (manifest == null) {
+						respond { 
+							content = "❌ **Failed to fetch Minecraft version information.** The Mojang API may be temporarily unavailable." 
+						}
 						return@action
 					}
 
 					editingPaginator {
 						timeoutSeconds = PAGINATOR_TIMEOUT
 
-						knownVersions.chunked(CHUNK_SIZE).forEach { chunk ->
+						val releases = manifest.versions.filter { it.type == "release" }
+						val snapshots = manifest.versions.filter { it.type == "snapshot" }
+
+						// Releases page
+						releases.chunked(CHUNK_SIZE).forEach { chunk ->
 							page(
 								Page {
-									title = "Patch note versions"
-									color = DISCORD_FUCHSIA
+									title = "🎮 Minecraft Releases"
+									color = DISCORD_GREEN
 
-									description = chunk.joinToString("\n") { "**»** `$it`" }
+									description = chunk.joinToString("\n") { version ->
+										val time = kotlinx.datetime.Instant.parse(version.releaseTime)
+										"**${version.id}** - <t:${time.epochSeconds}:d>"
+									}
 
 									footer {
-										text = "${currentEntries.entries.size} versions"
+										text = "${releases.size} release versions available"
 									}
 								}
 							)
+						}
+
+						// Snapshots page
+						if (snapshots.isNotEmpty()) {
+							snapshots.take(50).chunked(CHUNK_SIZE).forEach { chunk ->
+								page(
+									Page {
+										title = "📸 Minecraft Snapshots"
+										color = DISCORD_YELLOW
+
+										description = chunk.joinToString("\n") { version ->
+											val time = kotlinx.datetime.Instant.parse(version.releaseTime)
+											"**${version.id}** - <t:${time.epochSeconds}:d>"
+										}
+
+										footer {
+											text = "${snapshots.size} snapshot versions available (showing recent 50)"
+										}
+									}
+								)
+							}
 						}
 					}.send()
 				}
 			}
 
-			ephemeralSubCommand(::CheckArguments) {
-				name = "forget".toKey()
-				description = "Forget a version (the last one by default), allowing it to be relayed again.".toKey()
-
-				check {
-					hasPermission(Permission.Administrator)
-				}
-
-				action {
-					if (!::currentEntries.isInitialized) {
-						respond { content = "Still setting up - try again a bit later!" }
-						return@action
-					}
-
-					val version = if (arguments.version == null) {
-						currentEntries.entries.first().version
-					} else {
-						currentEntries.entries.firstOrNull {
-							it.version.equals(arguments.version, true)
-						}?.version
-					}
-
-					if (version == null) {
-						respond { content = "Unknown version supplied: `${arguments.version}`" }
-						return@action
-					}
-
-					knownVersions.remove(version)
-
-					respond { content = "Version forgotten: `$version`" }
-				}
-			}
-
-			ephemeralSubCommand(::UpdateArguments) {
-				name = "update".toKey()
-				description = "Edit the given message to replace its embed. Useful when formatting code changes.".toKey()
-
-				check {
-					hasPermission(Permission.Administrator)
-				}
-
-				action {
-					if (!::currentEntries.isInitialized) {
-						respond { content = "Still setting up - try again a bit later!" }
-						return@action
-					}
-
-					val entry = currentEntries.entries.firstOrNull {
-						it.version.equals(arguments.version, true)
-					}
-
-					if (entry == null) {
-						respond { content = "Unknown version supplied: `${arguments.version}`" }
-						return@action
-					}
-
-					arguments.message.edit {
-						patchNotes(entry.get())
-					}
-
-					respond { content = "Message edit to match version: `${entry.version}`" }
-				}
-			}
-
-			ephemeralSubCommand {
-				name = "run".toKey()
-				description = "Run the check task now, without waiting for it.".toKey()
-
-				check {
-					hasPermission(Permission.Administrator)
-				}
-
-				action {
-					respond { content = "Checking now..." }
-
-					checkTask?.callNow()
-				}
-			}
-
-			// New notification configuration commands
 			ephemeralSubCommand(::NotificationSetupArguments) {
 				name = "setup".toKey()
 				description = "Configure Minecraft update notifications for this server".toKey()
@@ -268,103 +271,39 @@ public class MinecraftExtension : Extension() {
 
 				action {
 					val guildId = guild?.id ?: run {
-						respond { content = "This command can only be used in a server!" }
+						respond { content = "❌ This command can only be used in a server!" }
 						return@action
 					}
 
-					// Resolve the channel and validate it supports messaging
-					val channelArg = arguments.channel
-					logger.info { "Channel type received: ${channelArg::class.qualifiedName}" }
-
-					val targetChannel = when (channelArg) {
-						is TopGuildMessageChannel -> {
-							logger.info { "Direct match as TopGuildMessageChannel" }
-							channelArg
-						}
-						is TextChannel -> {
-							logger.info { "Direct match as TextChannel" }
-							channelArg
-						}
-						is NewsChannel -> {
-							logger.info { "Direct match as NewsChannel" }
-							channelArg
-						}
+					// Resolve the channel
+					val targetChannel = when (val channelArg = arguments.channel) {
+						is TopGuildMessageChannel -> channelArg
+						is TextChannel -> channelArg
+						is NewsChannel -> channelArg
 						is ResolvedChannel -> {
-							logger.info { "Got ResolvedChannel, trying fetchChannel() method to extract inner channel" }
 							try {
-								// Use fetchChannel() method instead of asChannel()
-								val innerChannel = channelArg.fetchChannel()
-								logger.info { "Successfully extracted channel using fetchChannel(), type: ${innerChannel::class.qualifiedName}" }
-
-								when (innerChannel) {
-									is TopGuildMessageChannel -> {
-										logger.info { "Inner channel is TopGuildMessageChannel" }
-										innerChannel
-									}
-									is TextChannel -> {
-										logger.info { "Inner channel is TextChannel" }
-										innerChannel
-									}
-									is NewsChannel -> {
-										logger.info { "Inner channel is NewsChannel" }
-										innerChannel
-									}
+								when (val innerChannel = channelArg.fetchChannel()) {
+									is TopGuildMessageChannel -> innerChannel
+									is TextChannel -> innerChannel
+									is NewsChannel -> innerChannel
 									else -> {
-										logger.warn { "Inner channel type not supported: ${innerChannel::class.qualifiedName}" }
 										respond {
-											content = "The selected channel (${innerChannel::class.simpleName}) is not supported. Please select a text channel."
+											content = "❌ **Unsupported channel type.** Please select a text or news channel."
 										}
 										return@action
 									}
 								}
 							} catch (e: Exception) {
-								logger.error(e) { "Failed to extract channel from ResolvedChannel using fetchChannel()" }
-								// Try the fallback fetchChannelOrNull() method
-								try {
-									val innerChannel = channelArg.fetchChannelOrNull()
-									if (innerChannel != null) {
-										logger.info { "Fallback successful using fetchChannelOrNull(), type: ${innerChannel::class.qualifiedName}" }
-										when (innerChannel) {
-											is TopGuildMessageChannel -> {
-												logger.info { "Inner channel is TopGuildMessageChannel" }
-												innerChannel
-											}
-											is TextChannel -> {
-												logger.info { "Inner channel is TextChannel" }
-												innerChannel
-											}
-											is NewsChannel -> {
-												logger.info { "Inner channel is NewsChannel" }
-												innerChannel
-											}
-											else -> {
-												logger.warn { "Inner channel type not supported: ${innerChannel::class.qualifiedName}" }
-												respond {
-													content = "The selected channel (${innerChannel::class.simpleName}) is **not supported**. Please select a text channel."
-												}
-												return@action
-											}
-										}
-									} else {
-										logger.error { "fetchChannelOrNull() returned null" }
-										respond {
-											content = "**Failed to process** the selected channel. Please try selecting a different channel."
-										}
-										return@action
-									}
-								} catch (fallbackException: Exception) {
-									logger.error(fallbackException) { "Both fetchChannel() and fetchChannelOrNull() failed" }
-									respond {
-										content = "**Failed to process** to process the selected channel. Please try selecting a different channel."
-									}
-									return@action
+								logger.error(e) { "Failed to resolve channel" }
+								respond {
+									content = "❌ **Failed to access the selected channel.** Please ensure the bot has proper permissions."
 								}
+								return@action
 							}
 						}
 						else -> {
-							logger.warn { "Completely unsupported channel type: ${channelArg::class.qualifiedName}" }
 							respond {
-								content = "The selected channel (${channelArg::class.simpleName}) is **not supported**. Please select a text channel."
+								content = "❌ **Unsupported channel type.** Please select a text or news channel."
 							}
 							return@action
 						}
@@ -373,12 +312,13 @@ public class MinecraftExtension : Extension() {
 					val config = MinecraftNotificationService.setConfig(
 						guildId = guildId,
 						channelId = targetChannel.id,
-						pingRoleId = arguments.role?.id
+						pingRoleId = arguments.role?.id,
+						includeSnapshots = arguments.includeSnapshots ?: false
 					)
 
 					if (config == null) {
 						respond {
-							content = "**Failed to configure notifications**. The database may be unavailable. Please try again later."
+							content = "❌ **Failed to configure notifications.** The database may be unavailable. Please try again later."
 						}
 						return@action
 					}
@@ -389,9 +329,15 @@ public class MinecraftExtension : Extension() {
 						""
 					}
 
+					val snapshotText = if (config.includeSnapshots) {
+						" (including snapshots)"
+					} else {
+						" (releases only)"
+					}
+
 					respond {
-						content = "Minecraft update notifications configured!\n" +
-								"Updates will be sent to <#${config.channelId}>$roleText"
+						content = "✅ **Minecraft update notifications configured!**\n" +
+								"📍 Updates will be sent to <#${config.channelId}>$roleText$snapshotText"
 					}
 				}
 			}
@@ -406,21 +352,21 @@ public class MinecraftExtension : Extension() {
 
 				action {
 					val guildId = guild?.id ?: run {
-						respond { content = "This command can only be used in a server!" }
+						respond { content = "❌ This command can only be used in a server!" }
 						return@action
 					}
 
 					val success = MinecraftNotificationService.setEnabled(guildId, false)
 
-					when {
-						success == null -> {
-							respond { content = "**Failed to update settings**. The database may be unavailable. Please try again later." }
+					when (success) {
+						null -> {
+							respond { content = "❌ **Failed to update settings.** The database may be unavailable. Please try again later." }
 						}
-						success -> {
-							respond { content = "Minecraft update notifications **disabled** for this server." }
+						true -> {
+							respond { content = "🔕 **Minecraft update notifications disabled** for this server." }
 						}
-						else -> {
-							respond { content = "**No notification configuration found** for this server." }
+						false -> {
+							respond { content = "❌ **No notification configuration found** for this server. Use `/minecraft setup` first." }
 						}
 					}
 				}
@@ -436,21 +382,52 @@ public class MinecraftExtension : Extension() {
 
 				action {
 					val guildId = guild?.id ?: run {
-						respond { content = "This command can only be used in a server!" }
+						respond { content = "❌ This command can only be used in a server!" }
 						return@action
 					}
 
 					val success = MinecraftNotificationService.setEnabled(guildId, true)
 
-					when {
-						success == null -> {
-							respond { content = "**Failed to update** settings. The database may be unavailable. Please try again later." }
+					when (success) {
+						null -> {
+							respond { content = "❌ **Failed to update settings.** The database may be unavailable. Please try again later." }
 						}
-						success -> {
-							respond { content = "Minecraft update notifications **enabled** for this server." }
+						true -> {
+							respond { content = "🔔 **Minecraft update notifications enabled** for this server." }
 						}
-						else -> {
-							respond { content = "**No notification configuration found** for this server. Use `/mc setup` first." }
+						false -> {
+							respond { content = "❌ **No notification configuration found** for this server. Use `/minecraft setup` first." }
+						}
+					}
+				}
+			}
+
+			ephemeralSubCommand(::SnapshotToggleArguments) {
+				name = "snapshots".toKey()
+				description = "Toggle snapshot notifications for this server".toKey()
+
+				check {
+					hasPermission(Permission.ManageGuild)
+				}
+
+				action {
+					val guildId = guild?.id ?: run {
+						respond { content = "❌ This command can only be used in a server!" }
+						return@action
+					}
+
+					val success = MinecraftNotificationService.setIncludeSnapshots(guildId, arguments.include ?: false)
+
+					when (success) {
+						null -> {
+							respond { content = "❌ **Failed to update settings.** The database may be unavailable. Please try again later." }
+						}
+						true -> {
+							val status = if (arguments.include ?: false) "enabled" else "disabled"
+							respond { content = "📸 **Snapshot notifications $status** for this server." }
+						}
+						false -> {
+							respond { content = "❌ **No notification configuration found** for this server. Use `/minecraft setup` first." }
 						}
 					}
 				}
@@ -462,7 +439,7 @@ public class MinecraftExtension : Extension() {
 
 				action {
 					val guildId = guild?.id ?: run {
-						respond { content = "This command can only be used in a server!" }
+						respond { content = "❌ This command can only be used in a server!" }
 						return@action
 					}
 
@@ -470,8 +447,8 @@ public class MinecraftExtension : Extension() {
 
 					if (config == null) {
 						respond {
-							content = "No notification configuration found for this server or database is unavailable.\n" +
-									"Use `/mc setup` to configure notifications."
+							content = "❌ **No notification configuration found** for this server or database is unavailable.\n" +
+									"Use `/minecraft setup` to configure notifications."
 						}
 						return@action
 					}
@@ -479,14 +456,19 @@ public class MinecraftExtension : Extension() {
 					val statusEmoji = if (config.enabled) "✅" else "❌"
 					val statusText = if (config.enabled) "Enabled" else "Disabled"
 					val roleText = if (config.pingRoleId != null) {
-						"\n**Ping Role:** <@&${config.pingRoleId}>"
+						"\n**📍 Ping Role:** <@&${config.pingRoleId}>"
 					} else {
-						"\n**Ping Role:** None"
+						"\n**📍 Ping Role:** None"
+					}
+					val snapshotText = if (config.includeSnapshots) {
+						"\n**📸 Snapshots:** Included"
+					} else {
+						"\n**📸 Snapshots:** Releases only"
 					}
 
 					respond {
 						content = "$statusEmoji **Minecraft Notifications:** $statusText\n" +
-								"**Channel:** <#${config.channelId}>$roleText"
+								"**📍 Channel:** <#${config.channelId}>$roleText$snapshotText"
 					}
 				}
 			}
@@ -501,275 +483,203 @@ public class MinecraftExtension : Extension() {
 
 				action {
 					val guildId = guild?.id ?: run {
-						respond { content = "This command can only be used in a server!" }
+						respond { content = "❌ This command can only be used in a server!" }
 						return@action
 					}
 
 					val success = MinecraftNotificationService.removeConfig(guildId)
 
-					when {
-						success == null -> {
-							respond { content = "**Failed to remove configuration**. The database may be unavailable. Please try again later." }
+					when (success) {
+						null -> {
+							respond { content = "❌ **Failed to remove configuration.** The database may be unavailable. Please try again later." }
 						}
-						success -> {
-							respond { content = "Minecraft notification configuration removed for this server." }
+						true -> {
+							respond { content = "🗑️ **Minecraft notification configuration removed** for this server." }
 						}
-						else -> {
-							respond { content = "**No notification configuration found** for this server." }
+						false -> {
+							respond { content = "❌ **No notification configuration found** for this server." }
 						}
 					}
 				}
 			}
-		}
-	}
 
-	public suspend fun populateVersions() {
-		currentEntries = client.get(JSON_URL).body()
+			ephemeralSubCommand {
+				name = "check".toKey()
+				description = "Manually trigger a check for new Minecraft updates".toKey()
 
-		currentEntries.entries.forEach { knownVersions.add(it.version) }
-	}
+				check {
+					hasPermission(Permission.Administrator)
+				}
 
-	@Suppress("TooGenericExceptionCaught")
-	public suspend fun checkTask() {
-		try {
-			val now = Clock.System.now()
+				action {
+					respond { content = "🔍 **Checking for Minecraft updates...** This may take a moment." }
 
-			currentEntries = client.get(JSON_URL + "?cbt=${now.epochSeconds}").body()
-
-			currentEntries.entries.forEach {
-				if (it.version !in knownVersions) {
-					relayUpdate(it.get())
-					knownVersions.add(it.version)
+					checkTask?.callNow()
 				}
 			}
-		} catch (t: Throwable) {
-			logger.error(t) { "Check task run failed" }
-		} finally {
-			checkTask = scheduler.schedule(CHECK_DELAY, callback = ::checkTask)
 		}
 	}
 
-	@Suppress("TooGenericExceptionCaught")
-	public suspend fun relayUpdate(patchNote: PatchNote): Any {
-		val configs = MinecraftNotificationService.getAllEnabledConfigs()
-
-		if (configs.isEmpty()) {
-			logger.info { "No enabled notification configurations found, skipping relay" }
-			return Unit
-		}
-
-		configs.forEach { config ->
-			try {
-				val channel = kord.getChannelOf<TopGuildMessageChannel>(Snowflake(config.channelId))
-				channel?.relay(patchNote, config.pingRoleId?.let { Snowflake(it) })
-			} catch (t: Throwable) {
-				logger.warn(t) { "Unable to send notification to channel ${config.channelId} in guild ${config.guildId}" }
+	private suspend fun checkForUpdates() {
+		try {
+			logger.debug { "Checking for Minecraft updates..." }
+			
+			val updates = updateService.checkForUpdates()
+			
+			if (updates.isEmpty()) {
+				logger.debug { "No new Minecraft updates found" }
+				return
 			}
-		}
 
-		return Unit
-	}
+			logger.info { "Found ${updates.size} new Minecraft updates" }
 
-	public fun String.formatHTML(): String {
-		var result = StringEscapeUtils.unescapeHtml4(trim('\n'))
+			val configs = MinecraftNotificationService.getAllEnabledConfigs()
+			if (configs.isEmpty()) {
+				logger.debug { "No enabled notification configurations found" }
+				return
+			}
 
-		result = result.replace("\u200B", "")
-		result = result.replace("<p></p>", "")
-
-		result = result.replace("<hr/?>".toRegex(), "\\_\\_\\_\\_\\_\\_\\_\\_\\_\\_\\_\\_")
-		result = result.replace("</hr>", "")
-
-		result = result.replace("[\n]*</p>\n+<p>[\n]*".toRegex(), "\n\n")
-		result = result.replace("[\n]*<[/]*p>[\n]*".toRegex(), "\n")
-
-		result = result.replace("<strong>", "**")
-		result = result.replace("</strong>", "**")
-
-		result = result.replace("<em>", "_")
-		result = result.replace("</em>", "_")
-
-		result = result.replace("<code>", "`")
-		result = result.replace("</code>", "`")
-
-		@Suppress("MagicNumber")
-		for (i in 1..6) {
-			result = result.replace("[\n]*<h$i>[\n]*".toRegex(), "\n\n${"#".repeat(i)} ")
-			result = result.replace("[\n]*</h$i>[\n]*".toRegex(), "\n")
-		}
-
-		result = result.replace("[\n]*<[ou]l>[\n]*".toRegex(), "\n\n")
-		result = result.replace("[\n]*</[ou]l>[\n]*".toRegex(), "\n\n")
-
-		result = result.replace("[\n]*</li>\n+<li>[\n]*".toRegex(), "\n- ")
-		result = result.replace("([\n]{2,})?<li>[\n]*".toRegex(), "\n- ")
-		result = result.replace("[\n]*</li>[\n]*".toRegex(), "\n\n")
-
-		val links = LINK_REGEX.findAll(result)
-
-		links.forEach {
-			result = result.replace(
-				it.value,
-				"[${it.groups["text"]?.value}](${it.groups["url"]?.value})"
-			)
-		}
-
-		val cursor = Cursor(result)
-		var isQuote = false
-
-		result = ""
-
-		@Suppress("LoopWithTooManyJumpStatements")  // Nah.
-		while (cursor.hasNext) {
-			result += (
-				cursor.consumeWhile { it != '<' }?.prefixQuote(isQuote)
-					?: break
+			for (update in updates) {
+				// Track this version in database
+				MinecraftNotificationService.addKnownVersion(
+					version = update.version,
+					versionType = update.type,
+					releaseTime = update.releaseTime.toLocalDateTime(TimeZone.UTC),
+					processed = true
 				)
 
-			val temp = cursor.consumeWhile { it != '>' }
-				?.plus(cursor.nextOrNull() ?: "")
-				?: break
+				// Send notifications to all configured guilds
+				for (config in configs) {
+					// Skip snapshots if guild doesn't want them
+					if (update.isSnapshot && !config.includeSnapshots) {
+						continue
+					}
 
-			if (temp == "<blockquote>") {
-				isQuote = true
-
-				if (cursor.peekNext() == '\n') {
-					cursor.next()
+					try {
+						val channel = kord.getChannelOf<TopGuildMessageChannel>(Snowflake(config.channelId))
+						channel?.sendMinecraftUpdate(update, config.pingRoleId?.let { Snowflake(it) })
+					} catch (e: Exception) {
+						logger.warn(e) { "Failed to send notification to channel ${config.channelId} in guild ${config.guildId}" }
+					}
 				}
-
-				continue
-			} else if (temp == "</blockquote>") {
-				isQuote = false
-
-				continue
 			}
 
-			result += temp.prefixQuote(isQuote)
-		}
-
-		result = result.replace("&#60", "<")
-
-		return result.trim()
-	}
-
-	public fun String.prefixQuote(prefix: Boolean): String =
-		if (prefix) {
-			split("\n")
-				.joinToString("\n") {
-					"> $it"
-				}
-		} else {
-			this
-		}
-
-	public fun String.truncateMarkdown(maxLength: Int = 3000): Pair<String, Int> {
-		var result = this
-
-		if (length > maxLength) {
-			val truncated = result.substring(0, maxLength).substringBeforeLast("\n")
-			val remaining = result.substringAfter(truncated).count { it == '\n' }
-
-			result = truncated
-
-			return result to remaining
-		}
-
-		return result to 0
-	}
-
-	private fun MessageBuilder.patchNotes(patchNote: PatchNote, maxLength: Int = 3000) {
-		val (truncated, remaining) = patchNote.body.formatHTML().truncateMarkdown(maxLength)
-
-		actionRow {
-			linkButton("https://quiltmc.org/mc-patchnotes/#${patchNote.version}") {
-				label = "Read more..."
-
-				emoji("🔗".toReaction() as ReactionEmoji.Unicode)
-			}
-		}
-
-		embed {
-			title = patchNote.title
-			color = DISCORD_GREEN
-
-			description = truncated
-
-			if (remaining > 0) {
-				description += "\n\n[... $remaining more lines]"
-			}
-
-			thumbnail {
-				url = "$BASE_URL${patchNote.image.url}"
-			}
-
-			footer {
-				text = "URL: https://quiltmc.org/mc-patchnotes/#${patchNote.version}"
-			}
+		} catch (e: Exception) {
+			logger.error(e) { "Error during update check" }
+		} finally {
+			// Schedule next check
+			checkTask = scheduler.schedule(CHECK_DELAY, callback = ::checkForUpdates)
 		}
 	}
 
-	private suspend fun TopGuildMessageChannel.relay(patchNote: PatchNote, pingRoleId: Snowflake? = null) {
+	private suspend fun TopGuildMessageChannel.sendMinecraftUpdate(
+		update: ProcessedMinecraftUpdate,
+		pingRoleId: Snowflake? = null
+	) {
 		val message = createMessage {
 			// Ping the configured role if one is set
 			if (pingRoleId != null) {
 				content = "<@&$pingRoleId>"
 			}
 
-			patchNotes(patchNote)
+			updateEmbed(update)
 		}
 
-		val title = if (patchNote.title.startsWith("minecraft ", true)) {
-			patchNote.title.split(" ", limit = 2).last()
+		// Create thread for discussion
+		val threadTitle = if (update.isSnapshot) {
+			"Snapshot ${update.version} Discussion"
 		} else {
-			patchNote.title
+			"Minecraft ${update.version} Discussion"
 		}
 
 		when (this) {
-			is TextChannel -> startPublicThreadWithMessage(
-				message.id, title
-			) { reason = "Thread created for Minecraft update" }
+			is TextChannel -> {
+				try {
+					startPublicThreadWithMessage(
+						message.id, threadTitle.take(100) // Discord limit
+					) { reason = "Thread created for Minecraft update discussion" }
+				} catch (e: Exception) {
+					logger.debug(e) { "Failed to create thread for update" }
+				}
+			}
 
 			is NewsChannel -> {
-				startPublicThreadWithMessage(
-					message.id, title
-				) { reason = "Thread created for Minecraft update" }
-
-				message.publish()
+				try {
+					startPublicThreadWithMessage(
+						message.id, threadTitle.take(100)
+					) { reason = "Thread created for Minecraft update discussion" }
+					message.publish()
+				} catch (e: Exception) {
+					logger.debug(e) { "Failed to create thread or publish message" }
+				}
 			}
 		}
 	}
 
-	public fun getLatest(): PatchNoteEntry =
-		currentEntries.entries.first()
+	private fun MessageBuilder.updateEmbed(update: ProcessedMinecraftUpdate) {
+		embed {
+			title = update.title
+			color = when {
+				update.isNewRelease -> DISCORD_GREEN
+				update.isSnapshot -> DISCORD_YELLOW
+				else -> DISCORD_FUCHSIA
+			}
+
+			description = update.description
+
+			field {
+				name = "Version"
+				value = update.version
+				inline = true
+			}
+
+			field {
+				name = "Type"
+				value = update.type.replaceFirstChar { it.uppercase() }
+				inline = true
+			}
+
+			field {
+				name = "Released"
+				value = "<t:${update.releaseTime.epochSeconds}:R>"
+				inline = true
+			}
+
+			if (update.imageUrl != null) {
+				thumbnail {
+					url = update.imageUrl
+				}
+			}
+
+			footer {
+				text = "Minecraft Update Notification"
+			}
+
+			timestamp = Clock.System.now()
+		}
+
+		actionRow {
+			linkButton(update.changelogUrl) {
+				label = "📋 View Changelog"
+			}
+			linkButton("https://www.minecraft.net/en-us/download") {
+				label = "⬇️ Download"
+			}
+		}
+	}
 
 	override suspend fun unload() {
 		checkTask?.cancel()
-		client.close()
+		updateService.close()
 		DatabaseConfig.close()
-
 		super.unload()
 	}
 
-	public suspend fun PatchNoteEntry.get(): PatchNote =
-		client.get("$BASE_URL/$contentPath").body<PatchNote>()
-
 	@OptIn(KordPreview::class)
-	public class CheckArguments : Arguments() {
+	public class VersionArguments : Arguments() {
 		public val version: String? by optionalString {
 			name = "version".toKey()
-			description = "Specific version to get patch notes for".toKey()
-		}
-	}
-
-	@OptIn(KordPreview::class)
-	public class UpdateArguments : Arguments() {
-		public val version: String by string {
-			name = "version".toKey()
-			description = "Specific version to get patch notes for".toKey()
-		}
-
-		public val message: Message by message {
-			name = "message".toKey()
-			description = "Message to edit with a new embed".toKey()
+			description = "Specific version to get information for".toKey()
 		}
 	}
 
@@ -784,21 +694,18 @@ public class MinecraftExtension : Extension() {
 			name = "role".toKey()
 			description = "Role to ping when updates are posted (optional)".toKey()
 		}
-	}
-}
 
-// In-dev testing function
-@Suppress("unused")
-private suspend fun main() {
-	val ext = MinecraftExtension()
-	ext.populateVersions()
-
-	val current = ext.getLatest()
-
-	with(ext) {
-		println(current.get().body.formatHTML())
+		public val includeSnapshots: Boolean? by optionalBoolean {
+			name = "include_snapshots".toKey()
+			description = "Whether to include snapshot notifications (default: false)".toKey()
+		}
 	}
 
-	exitProcess(0)
+	@OptIn(KordPreview::class)
+	public class SnapshotToggleArguments : Arguments() {
+		public val include: Boolean? by optionalBoolean {
+			name = "include".toKey()
+			description = "Whether to include snapshot notifications".toKey()
+		}
+	}
 }
-
