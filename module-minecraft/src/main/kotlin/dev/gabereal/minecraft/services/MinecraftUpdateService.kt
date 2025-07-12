@@ -100,28 +100,54 @@ public class MinecraftUpdateService {
             return emptyList() // Don't send notifications on first run
         }
         
-        // Get recent versions (within the last 30 days or versions we haven't seen)
+        // Get recent versions (within the last 30 days) that haven't been processed yet
         val recentVersions = manifest.versions.filter { version ->
             val versionTime = Instant.parse(version.releaseTime)
-            versionTime > (currentTime - (30 * 24).hours) || version.id !in lastCheckedVersions
+            versionTime > (currentTime - (30 * 24).hours)
         }
         
         val newUpdates = mutableListOf<ProcessedMinecraftUpdate>()
         
-        for (version in recentVersions.take(5)) { // Limit to 5 most recent to avoid spam
+        for (version in recentVersions.take(10)) { // Check up to 10 recent versions
             try {
-                val update = processVersionUpdate(version, manifest)
-                if (update != null && version.id !in lastCheckedVersions) {
-                    newUpdates.add(update)
+                // Check if this version has already been processed in the database
+                val alreadyProcessed = MinecraftNotificationService.isVersionKnown(version.id)
+                
+                // Also check in-memory cache for this session
+                val inMemoryCache = version.id in lastCheckedVersions
+                
+                if (!alreadyProcessed && !inMemoryCache) {
+                    logger.debug { "Processing new version: ${version.id}" }
+                    val update = processVersionUpdate(version, manifest)
+                    if (update != null) {
+                        newUpdates.add(update)
+                        
+                        // Mark as processed in database
+                        val releaseTime = Instant.parse(version.releaseTime)
+                        MinecraftNotificationService.addKnownVersion(
+                            version = version.id,
+                            versionType = version.type,
+                            releaseTime = releaseTime.toLocalDateTime(kotlinx.datetime.TimeZone.UTC),
+                            processed = true
+                        )
+                    }
+                } else {
+                    logger.debug { "Skipping already processed version: ${version.id}" }
                 }
             } catch (e: Exception) {
                 logger.error(e) { "Error processing version ${version.id}" }
             }
         }
         
-        // Update our tracking
+        // Update our in-memory tracking
         lastCheckedVersions = manifest.versions.take(20).map { it.id }.toSet() // Keep track of last 20 versions
         lastCheckTime = currentTime
+        
+        if (newUpdates.isNotEmpty()) {
+            logger.info { "Found ${newUpdates.size} new Minecraft updates: ${newUpdates.map { it.version }}" }
+        } else {
+            logger.debug { "No new Minecraft updates found" }
+        }
         
         return newUpdates.sortedByDescending { it.releaseTime }
     }
