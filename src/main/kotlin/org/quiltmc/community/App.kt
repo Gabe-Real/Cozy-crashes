@@ -27,6 +27,7 @@ import org.quiltmc.community.cozy.modules.logs.processors.ProblematicLauncherPro
 import org.quiltmc.community.extensions.InformationExtension
 import dev.gabereal.minecraft.MinecraftExtension
 import org.quiltmc.community.logs.*
+import org.quiltmc.community.logs.mods.EntrypointStageProcessor
 import org.quiltmc.community.logs.plugins.MissingPluginProcessor
 import org.quiltmc.community.logs.plugins.NotSupportMarkedPluginProcessor
 import org.quiltmc.community.logs.plugins.PluginErrorProcessor
@@ -132,6 +133,7 @@ suspend fun setupQuilt() = ExtensibleBot(DISCORD_TOKEN) {
 			processor(MissingApiProcessor())
 			processor(ServerWatchdogProcessor())
 			processor(MissingModsTomlProcessor())
+			processor(EntrypointStageProcessor())
 			// Plugin processors
 			processor(MissingPluginProcessor())
 			processor(PluginErrorProcessor())

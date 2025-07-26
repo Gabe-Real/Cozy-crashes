@@ -1,0 +1,6 @@
+# Base URL to use when attempting to hit the PluralKit API, without the /vX used to specify the version.
+apiUrl = "https://api.pluralkit.me"
+# The ID of the PluralKit instance to use, if not the default instance.
+botId = 466378653216014359
+# Whether PluralKit integration should be enabled on this server.
+enabled = true

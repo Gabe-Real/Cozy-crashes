@@ -1,0 +1,16 @@
+# Which namespaces to allow conversions for - 'barn', 'feather', 'hashed-mojang', 'legacy-yarn','plasma', 'quilt-mappings', 'mcp', 'mojang', 'srg-mojang', 'yarn' or 'yarrn'
+namespaces = [
+    "barn",
+    "feather",
+    "hashed-mojang",
+    "legacy-yarn",
+    "mcp",
+    "mojang",
+    "plasma",
+    "quilt-mappings",
+    "srg-mojang",
+    "yarn",
+    "yarrn"
+]
+# How long to wait before closing mappings paginators (in seconds), defaults to 5 mins
+timeout = 300
