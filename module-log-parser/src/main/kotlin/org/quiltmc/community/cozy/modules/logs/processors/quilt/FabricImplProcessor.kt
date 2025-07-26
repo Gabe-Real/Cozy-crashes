@@ -12,6 +12,11 @@ import org.quiltmc.community.cozy.modules.logs.data.Log
 import org.quiltmc.community.cozy.modules.logs.data.Order
 import org.quiltmc.community.cozy.modules.logs.types.LogProcessor
 
+private val ENTRYPOINT_ERROR_REGEX = Regex(
+	"""Could not execute entrypoint stage '.+?' due to errors, provided by '(.+?)' at '(.+?)'!""",
+	RegexOption.IGNORE_CASE
+)
+
 public class FabricImplProcessor : LogProcessor() {
 	override val identifier: String = "quilt-fabric-impl"
 	override val order: Order = Order.Default
@@ -24,29 +29,19 @@ public class FabricImplProcessor : LogProcessor() {
 		var suspectedMod: String? = null
 		var suspectedPackage: String? = null
 
-		for ((index, line) in log.content.lines().mapIndexed { index, s -> index to s }) {
-			if (line.startsWith("java.lang.RuntimeException: Could not execute entrypoint stage")) {
-				classNotFoundLine = index
-
-				suspectedMod = line
-					.split("' due to errors, provided by '")
-					.lastOrNull()
-					?.split("'")
-					?.firstOrNull()
-					?.trim()
-
-				continue
+		for ((index, line) in log.content.lines().mapIndexed { idx, s -> idx to s }) {
+			if (classNotFoundLine == null) {
+				val match = ENTRYPOINT_ERROR_REGEX.find(line)
+				if (match != null) {
+					classNotFoundLine = index
+					suspectedMod = match.groupValues[1].trim()
+					continue
+				}
 			}
 
-			if (classNotFoundLine == null || suspectedMod == null) {
-				continue
-			}
-
-			if (line.startsWith("Caused by: java.lang.ClassNotFoundException:")) {
-				suspectedPackage = line.split("ClassNotFoundException:").lastOrNull()?.trim()
-
-				if (suspectedPackage != null) {
-					break
+			if (classNotFoundLine != null && index > classNotFoundLine && suspectedPackage == null) {
+				if (line.startsWith("Caused by: java.lang.ClassNotFoundException:")) {
+					suspectedPackage = line.split("ClassNotFoundException:").lastOrNull()?.trim()
 				}
 			}
 		}
@@ -54,10 +49,10 @@ public class FabricImplProcessor : LogProcessor() {
 		if (
 			suspectedMod != null &&
 			suspectedPackage != null &&
-			".fabricmc." in suspectedPackage && (".impl." in suspectedPackage || ".mixin." in suspectedPackage)
+			".fabricmc." in suspectedPackage &&
+			(".impl." in suspectedPackage || ".mixin." in suspectedPackage)
 		) {
 			log.hasProblems = true
-
 			log.addMessage(
 				"Mod `$suspectedMod` may be using Fabric internals:\n`$suspectedPackage`"
 			)
