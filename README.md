@@ -4,7 +4,7 @@ This repository contains a Discord bot that we make use of to help keep modded m
 Certain features are directly forked from QuiltMC's [Cozy Discord](https://github.com/QuiltMC/cozy-discord), that is
 licensed under the Mozilla public license 2.0.
 
-These bots features include:
+This bots features include:
 
 * A minecraft crash report parsing system for modded and plugin-based servers
 * Support for common plugin platforms (Paper, Spigot, Bukkit, Velocity, BungeeCord, Waterfall)
@@ -26,7 +26,7 @@ If you're here to help out, here's what you'll need. Firstly:
 	* [Eclipse](https://www.eclipse.org/ide/): Install the latest version
 	  of [the Kotlin plugin](https://marketplace.eclipse.org/content/kotlin-plugin-eclipse), then go to the `Window`
 	  menu, `Preferences`, `Kotlin`, `Compiler` and make sure you set up the `JDK_HOME` and JVM target version
-* A MongoDB server: [Download](https://www.mongodb.com/try/download/community) and install
+* A database server: [Download](https://www.mongodb.com/try/download/community) and install
   | [Docker](https://hub.docker.com/_/mongo) | [Hosted](https://www.mongodb.com/atlas/database) (there's a free tier)
 	* You may also want [MongoDB Compass](https://www.mongodb.com/products/compass) if you're doing database-related
 	  work
@@ -64,12 +64,5 @@ and we will help you out. After that, feel free to set up and test whichever mod
 
 # Conventions and Linting
 
-This repository makes use of [detekt](https://detekt.github.io/detekt/), a static analysis tool for Kotlin code. Our
-formatting rules are contained within [detekt.yml](detekt.yml), but detekt can't verify everything.
-
-To be specific, proper spacing is important for code readability. If your code is too dense, then we're going to ask
-you to fix this problem and trust me, it's not forgiving lmao. For reference, I had to get 3 friends to help me figure
-out what the issue was and it turns out a string was 3 characters longer than it should've been so I just had to split
-the lines up - so try to bear it in mind. Let's see some examples...
-
-This repository no longer makes use of detekt... it's very annoying lmao.
+This repository no longer makes use of detekt, so naturally we recommend you do not install it as it most likely will
+not work.
