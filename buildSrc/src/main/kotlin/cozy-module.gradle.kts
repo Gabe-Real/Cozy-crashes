@@ -57,6 +57,29 @@ val sourceJar = task("sourceJar", Jar::class) {
 	from(sourceSets.main.get().allSource)
 }
 
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(24)
+		// Allow fallback to Java 17 for development
+		vendor = JvmVendorSpec.ADOPTIUM
+	}
+	
+	// For compatibility with Java 17 development environments
+	sourceCompatibility = JavaVersion.VERSION_17
+	targetCompatibility = JavaVersion.VERSION_17
+}
+
+kotlin {
+	jvmToolchain {
+		languageVersion = JavaLanguageVersion.of(24)
+		vendor = JvmVendorSpec.ADOPTIUM
+	}
+	
+	compilerOptions {
+		jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+	}
+}
+
 kordEx {
 	// Required due to that GraphQL client, because one of their other modules uses Spring 3, apparently.
 	// No, I don't think that's a good reason either.

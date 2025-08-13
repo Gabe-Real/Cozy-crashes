@@ -20,7 +20,10 @@ factored out into reusable modules. We do plan to do this at some point, but the
 
 If you're here to help out, here's what you'll need. Firstly:
 
-* A JDK, **Java 15 or later** - if you need one, try [Adoptium](https://adoptium.net/)
+* A JDK, **Java 17 or later** - if you need one, try [Adoptium](https://adoptium.net/)
+	* **Production builds use Java 24** for enhanced security (fewer vulnerabilities)
+	* **Development with Java 17** is fully supported through Gradle toolchains
+	* The build system will automatically download Java 24 if needed for compilation
 * An IDE suitable for Kotlin **and Gradle** work
 	* [IntelliJ IDEA](https://www.jetbrains.com/idea/): Community Edition should be plenty
 	* [Eclipse](https://www.eclipse.org/ide/): Install the latest version

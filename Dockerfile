@@ -1,4 +1,4 @@
-FROM openjdk:17-jdk-slim
+FROM eclipse-temurin:24-jdk-alpine
 
 COPY build/libs/cozy-crashes-*-all.jar /usr/local/lib/cozy-crashes.jar
 
