@@ -58,23 +58,20 @@ val sourceJar = task("sourceJar", Jar::class) {
 }
 
 java {
+	// Compile using JDK 24 toolchain but emit Java 17 bytecode for runtime compatibility
 	toolchain {
 		languageVersion = JavaLanguageVersion.of(24)
-		// Allow fallback to Java 17 for development
 		vendor = JvmVendorSpec.ADOPTIUM
 	}
-	
-	// For compatibility with Java 17 development environments
+
 	sourceCompatibility = JavaVersion.VERSION_17
 	targetCompatibility = JavaVersion.VERSION_17
 }
 
 kotlin {
-	jvmToolchain {
-		languageVersion = JavaLanguageVersion.of(24)
-		vendor = JvmVendorSpec.ADOPTIUM
-	}
-	
+	// Use JDK 24 toolchain for Kotlin, still target JVM 17 bytecode
+	jvmToolchain(24)
+
 	compilerOptions {
 		jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
 	}

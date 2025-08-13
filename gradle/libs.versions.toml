@@ -6,7 +6,7 @@ autolink = "0.11.0"
 commons-text = "1.11.0"
 excelkt = "1.0.2"
 flexver = "1.1.1"
-groovy = "3.0.22"
+groovy = "4.0.21"
 homoglyph = "1.2.1"
 jansi = "2.4.1"
 jsoup = "1.18.1"
@@ -16,7 +16,6 @@ kotlintest = "3.4.2"
 ktor = "3.0.3"
 kx-ser = "1.7.1"
 logback = "1.5.6"
-logback-groovy = "1.14.5"
 logging = "7.0.0"
 rgxgen = "2.0"
 semver = "2.0.0"
@@ -27,7 +26,7 @@ commons-text = { module = "org.apache.commons:commons-text", version.ref = "comm
 excelkt = { module = "io.github.evanrupert:excelkt", version.ref = "excelkt" }
 flexver = { module = "com.unascribed:flexver-java", version.ref = "flexver" }
 graphql = { module = "com.expediagroup:graphql-kotlin-ktor-client", version.ref = "graphql" }
-groovy = { module = "org.codehaus.groovy:groovy", version.ref = "groovy" }
+groovy = { module = "org.apache.groovy:groovy", version.ref = "groovy" }
 homoglyph = { module = "net.codebox:homoglyph", version.ref = "homoglyph" }
 jansi = { module = "org.fusesource.jansi:jansi", version.ref = "jansi" }
 jsoup = { module = "org.jsoup:jsoup", version.ref = "jsoup" }
@@ -46,7 +45,6 @@ ktor_client_contentnegotiation = { module = "io.ktor:ktor-client-content-negotia
 ktor_serialization_json = { module = "io.ktor:ktor-serialization-kotlinx-json", version.ref = "ktor" }
 kx-ser = { module = "org.jetbrains.kotlinx:kotlinx-serialization-core", version.ref = "kx-ser" }
 logback = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
-logback-groovy = { module = "io.github.virtualdogbert:logback-groovy-config", version.ref = "logback-groovy" }
 logging = { module = "io.github.oshai:kotlin-logging", version.ref = "logging" }
 rgxgen = { module = "com.github.curious-odd-man:rgxgen", version.ref = "rgxgen" }
 semver = { module = "io.github.z4kn4fein:semver", version.ref = "semver" }

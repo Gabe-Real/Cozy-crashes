@@ -26,6 +26,8 @@ repositories {
 }
 
 dependencies {
+	// Align Groovy modules to a version compatible with JDK 24
+	implementation(platform("org.apache.groovy:groovy-bom:${libs.versions.groovy.get()}"))
 	implementation(libs.excelkt)
 	implementation(libs.kmongo)
 	implementation(libs.rgxgen)
@@ -43,7 +45,6 @@ dependencies {
 	implementation(libs.semver)
 
 	implementation(libs.logback)
-	implementation(libs.logback.groovy)
 	implementation(libs.logging)
 	implementation(libs.groovy)
 

@@ -1,4 +1,4 @@
-FROM eclipse-temurin:24-jdk-alpine
+FROM eclipse-temurin:24-jre-alpine
 
 COPY build/libs/cozy-crashes-*-all.jar /usr/local/lib/cozy-crashes.jar
 
