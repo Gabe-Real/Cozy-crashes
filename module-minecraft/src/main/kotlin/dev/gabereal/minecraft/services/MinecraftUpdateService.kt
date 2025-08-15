@@ -356,7 +356,7 @@ public class MinecraftUpdateService {
         // Clean up the result
         var content = result.toString()
             .replace(Regex("\\n{3,}"), "\n\n") // Max 2 consecutive newlines
-            .replace(Regex("\\s+"), " ") // Normalize whitespace but preserve newlines
+            .replace(Regex("[ \\t]+"), " ") // Normalize spaces and tabs only, preserve newlines
             .replace(" \n", "\n") // Remove spaces before newlines
             .trim()
         
