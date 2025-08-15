@@ -297,13 +297,66 @@ public class MinecraftUpdateService {
     private fun formatChangelogForDiscord(element: org.jsoup.nodes.Element): String {
         val result = StringBuilder()
         
-        // Process different types of elements to preserve formatting
+        // First try to process structured elements
+        processElementForDiscord(element, result)
+        
+        // If we got good structured content, use it
+        if (result.length > 50 && result.toString().contains('\n')) {
+            return cleanupDiscordContent(result.toString())
+        }
+        
+        // Fallback: Split plain text into paragraphs and format manually
+        val plainText = element.text().trim()
+        if (plainText.isBlank()) return ""
+        
+        // Split text into sentences and group them into paragraphs
+        val sentences = plainText.split(Regex("[.!?]+\\s+")).filter { it.trim().isNotEmpty() }
+        val paragraphs = mutableListOf<String>()
+        var currentParagraph = StringBuilder()
+        
+        for (sentence in sentences) {
+            val trimmedSentence = sentence.trim()
+            if (trimmedSentence.isEmpty()) continue
+            
+            // Add sentence to current paragraph
+            if (currentParagraph.isNotEmpty()) {
+                currentParagraph.append(". ")
+            }
+            currentParagraph.append(trimmedSentence)
+            
+            // Start new paragraph after 2-3 sentences or if sentence seems like a natural break
+            if (currentParagraph.length > 200 || 
+                trimmedSentence.lowercase().contains(Regex("\\b(new|added|changed|fixed|removed)\\b")) ||
+                sentences.indexOf(sentence) % 3 == 2) {
+                
+                if (!trimmedSentence.endsWith(".") && !trimmedSentence.endsWith("!") && !trimmedSentence.endsWith("?")) {
+                    currentParagraph.append(".")
+                }
+                paragraphs.add(currentParagraph.toString())
+                currentParagraph = StringBuilder()
+            }
+        }
+        
+        // Add remaining content as final paragraph
+        if (currentParagraph.isNotEmpty()) {
+            val finalParagraph = currentParagraph.toString()
+            if (!finalParagraph.endsWith(".") && !finalParagraph.endsWith("!") && !finalParagraph.endsWith("?")) {
+                currentParagraph.append(".")
+            }
+            paragraphs.add(currentParagraph.toString())
+        }
+        
+        // Join paragraphs with double newlines
+        return paragraphs.joinToString("\n\n").trim()
+    }
+    
+    private fun processElementForDiscord(element: org.jsoup.nodes.Element, result: StringBuilder) {
         for (child in element.children()) {
             when (child.tagName().lowercase()) {
                 "h1", "h2", "h3", "h4", "h5", "h6" -> {
                     val text = child.text().trim()
                     if (text.isNotBlank()) {
-                        result.append("\n**${text}**\n")
+                        result.append("\n**${text}**\n\n")
                     }
                 }
                 "p" -> {
@@ -327,40 +380,26 @@ public class MinecraftUpdateService {
                         result.append("• ${listItem}\n")
                     }
                 }
-                "strong", "b" -> {
-                    val text = child.text().trim()
-                    if (text.isNotBlank()) {
-                        result.append("**${text}** ")
-                    }
-                }
-                "em", "i" -> {
-                    val text = child.text().trim()
-                    if (text.isNotBlank()) {
-                        result.append("*${text}* ")
-                    }
+                "div", "section", "article" -> {
+                    // Recursively process container elements
+                    processElementForDiscord(child, result)
                 }
                 else -> {
                     val text = child.text().trim()
-                    if (text.isNotBlank()) {
-                        result.append("${text} ")
+                    if (text.isNotBlank() && text.length > 10) {
+                        result.append("${text}\n\n")
                     }
                 }
             }
         }
-        
-        // If no formatted content was found, fall back to plain text
-        if (result.isBlank()) {
-            result.append(element.text().trim())
-        }
-        
-        // Clean up the result
-        var content = result.toString()
+    }
+    
+    private fun cleanupDiscordContent(content: String): String {
+        return content
             .replace(Regex("\\n{3,}"), "\n\n") // Max 2 consecutive newlines
-            .replace(Regex("\\s+"), " ") // Normalize whitespace but preserve newlines
+            .replace(Regex("[ \\t]+"), " ") // Normalize spaces and tabs only, preserve newlines
             .replace(" \n", "\n") // Remove spaces before newlines
             .trim()
-        
-        return content
     }
 
     private fun getVersionImageUrl(version: String, isSnapshot: Boolean): String {
