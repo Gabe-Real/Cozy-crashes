@@ -110,21 +110,21 @@ jobs:
           find ~/.gradle/daemon -name "*.log" -mtime +3 -delete 2>/dev/null || true
 
       - name: Upload artifacts (Main JAR)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
 
         with:
           name: Main JAR
           path: build/libs/*-all.jar
 
       - name: Upload artifacts (JARs)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
 
         with:
           name: JARs
           path: build/libs/*.jar
 
       - name: Upload artifacts (Module JARs)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
 
         with:
           name: Module JARs
